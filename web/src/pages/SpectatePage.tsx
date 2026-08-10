@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, subscribeEvents } from "../api";
+import { isOffline, useOffline } from "../offline";
+import OfflineCard from "../components/OfflineCard";
 import { GameEvent, GameReport, GameState, ROLE_LABEL, STATUS_LABEL, TEAM_LABEL } from "../types";
 import Avatar from "../components/Avatar";
 import LevelTag from "../components/LevelTag";
@@ -18,6 +20,7 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 export default function SpectatePage({ gameId }: { gameId: number }) {
+  const offline = useOffline();
   const [state, setState] = useState<GameState | null>(null);
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [report, setReport] = useState<GameReport | null>(null);
@@ -30,7 +33,7 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
     setEvents([]);
     setReport(null);
     setError("");
-    api.getGame(gameId).then(setState).catch((e) => setError(e.message));
+    api.getGame(gameId).then(setState).catch((e) => { if (!isOffline()) setError(e.message); });
     const off = subscribeEvents(gameId, (evt) => {
       setEvents((prev) => (prev.length && prev[prev.length - 1].seq >= evt.seq ? prev : [...prev, evt]));
       if (evt.type === "ai_thinking") {
@@ -85,6 +88,7 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
     }
   }
 
+  if (offline) return <OfflineCard />;
   if (error) return <div className="err">{error}</div>;
   if (!state) return <div className="empty"><span className="spin" /> 加载中…</div>;
 

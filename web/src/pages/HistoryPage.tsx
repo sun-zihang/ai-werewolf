@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { isOffline, useOffline } from "../offline";
+import OfflineCard from "../components/OfflineCard";
 import { GameListItem, MODE_LABEL, STATUS_LABEL, TEAM_LABEL } from "../types";
 
 export default function HistoryPage({ go }: { go: (hash: string) => void }) {
   const [games, setGames] = useState<GameListItem[]>([]);
+  const offline = useOffline();
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.listGames().then(setGames).catch((e) => setError(e.message));
+    api.listGames().then(setGames).catch((e) => { if (!isOffline()) setError(e.message); });
   }, []);
 
   return (
@@ -18,9 +21,9 @@ export default function HistoryPage({ go }: { go: (hash: string) => void }) {
           <div className="sub">所有对局记录，点击可回放事件时间线</div>
         </div>
       </div>
-      {error && <div className="err" style={{ marginBottom: 14 }}>{error}</div>}
+      {error && !offline && <div className="err" style={{ marginBottom: 14 }}>{error}</div>}
       {games.length === 0 ? (
-        <div className="empty">还没有对局记录。到「新建对局」开一局吧。</div>
+        offline ? <OfflineCard /> : <div className="empty">还没有对局记录。到「新建对局」开一局吧。</div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="history-table">

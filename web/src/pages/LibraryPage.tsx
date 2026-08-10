@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+import { isOffline, useOffline } from "../offline";
+import OfflineCard from "../components/OfflineCard";
 import { PROVIDERS, providerLabel } from "../providers";
 import { AiProfilePublic, GameListItem, LEVEL_LABEL, LEVELS, ProviderMeta, Role, ROLES, ROLE_LABEL, STATUS_LABEL, TEAM_LABEL, ThinkingLevel } from "../types";
 import Avatar from "../components/Avatar";
@@ -36,6 +38,7 @@ const EMPTY: FormState = {
 
 export default function LibraryPage({ go }: { go: (hash: string) => void }) {
   const [profiles, setProfiles] = useState<AiProfilePublic[]>([]);
+  const offline = useOffline();
   const [search, setSearch] = useState("");
   const [filterProvider, setFilterProvider] = useState("");
   const [filterLevel, setFilterLevel] = useState("");
@@ -53,7 +56,7 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
     try {
       setProfiles(await api.listProfiles());
     } catch (e: any) {
-      setError(e.message);
+      if (!isOffline()) setError(e.message);
     }
   }, []);
 
@@ -214,10 +217,14 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
           />
         </div>
       </div>
-      {error && <div className="err" style={{ marginBottom: 14 }}>{error}</div>}
+      {error && !offline && <div className="err" style={{ marginBottom: 14 }}>{error}</div>}
 
       {filtered.length === 0 ? (
-        <div className="empty">还没有 AI 档案。点击「新建 AI」或「导入」开始添加。</div>
+        offline ? (
+          <OfflineCard />
+        ) : (
+          <div className="empty">还没有 AI 档案。点击「新建 AI」或「导入」开始添加。</div>
+        )
       ) : (
         <div className="profile-grid">
           {filtered.map((p) => {

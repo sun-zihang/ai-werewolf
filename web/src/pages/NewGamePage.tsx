@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { isOffline, useOffline } from "../offline";
+import OfflineCard from "../components/OfflineCard";
 import { AiProfilePublic, GameMode, LEVEL_LABEL, Preset, RoleAssignment } from "../types";
 import Avatar from "../components/Avatar";
 import LevelTag from "../components/LevelTag";
@@ -19,6 +21,7 @@ const ASSIGN_OPTIONS: { id: RoleAssignment; label: string; hint: string }[] = [
 
 export default function NewGamePage({ go }: { go: (hash: string) => void }) {
   const [profiles, setProfiles] = useState<AiProfilePublic[]>([]);
+  const offline = useOffline();
   const [presets, setPresets] = useState<Preset[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [mode, setMode] = useState<"auto" | GameMode>("auto");
@@ -29,7 +32,7 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.listProfiles().then(setProfiles).catch((e) => setError(e.message));
+    api.listProfiles().then(setProfiles).catch((e) => { if (!isOffline()) setError(e.message); });
     api.listPresets().then(setPresets).catch(() => {});
   }, []);
 
@@ -107,7 +110,7 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
         <div>
           <div className="section-title">选择 AI（已选 {n}）</div>
           {sorted.length === 0 ? (
-            <div className="empty">AI 库为空，请先到「AI 库」创建或导入 AI 档案。</div>
+            offline ? <OfflineCard /> : <div className="empty">AI 库为空，请先到「AI 库」创建或导入 AI 档案。</div>
           ) : (
             <div className="game-list">
               {sorted.map((p) => (

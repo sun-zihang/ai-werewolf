@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { API_BASE } from "./api";
+import { setOffline } from "./offline";
 import LibraryPage from "./pages/LibraryPage";
 import NewGamePage from "./pages/NewGamePage";
 import SpectatePage from "./pages/SpectatePage";
@@ -34,8 +35,14 @@ export default function App() {
   }, []);
   useEffect(() => {
     fetch(`${API_BASE}/api/health`)
-      .then((r) => setOnline(r.ok))
-      .catch(() => setOnline(false));
+      .then((r) => {
+        setOnline(r.ok);
+        setOffline(!r.ok);
+      })
+      .catch(() => {
+        setOnline(false);
+        setOffline(true);
+      });
   }, []);
 
   return (

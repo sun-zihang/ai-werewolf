@@ -10,6 +10,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     let msg = `请求失败 ${res.status}`;
+    if (res.status === 404) msg = "后端接口不存在（404）—— 请确认已在本机启动后端（npm run start）";
     try {
       const body = await res.json();
       if (body?.error) msg = body.error;
