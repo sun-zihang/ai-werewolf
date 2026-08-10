@@ -1,0 +1,98 @@
+# AI 狼人杀网页版（全 AI 自动对局 · 观战版）
+
+在本地运行的 AI 狼人杀：从 AI 库挑选 2–12 个 AI（可来自 12 家主流大模型厂商，也可用内置本地规则引擎），自动分配狼人/村民/预言家/女巫/猎人/白痴身份，AI 全程自主发言、行动、投票，你在旁边实时观战并查看结算报告。
+
+- 浅色纸感极简界面，无渐变 / 无玻璃拟态
+- 完整规则状态机：夜间（狼刀 → 预言家查验 → 女巫救/毒）→ 白天（公布死讯 → 遗言 → 发言 → 投票 → 出局/白痴翻牌/猎人开枪）→ 胜负判定
+- 三档人数模式：简易 2–4 人、标准 5–8 人、复杂 9–12 人
+- 思考强度四档：纸 / 中 / 高 / 特高，映射到各厂商原生思考参数
+- 超时熔断、非法动作拦截重试、降级兜底；API 密钥 AES-256-GCM 加密存储
+
+## 快速开始
+
+需要 Node.js ≥ 22.5（内置 node:sqlite；建议 24 LTS）。
+
+```bash
+# 1. 安装依赖（根、server、web）
+npm run setup
+
+# 2. 启动开发模式（后端 3001 + 前端 5173，前端代理 /api）
+npm run dev
+```
+
+打开 http://localhost:5173 即可使用。
+
+生产模式：
+
+```bash
+npm run build   # 构建前端到 web/dist
+npm run start   # 后端 3001 直接托管前端
+# 打开 http://localhost:3001
+```
+
+首次启动会在 `data/` 生成 SQLite 数据库（`app.db`）和加密主密钥（`.masterkey`，请勿泄露/删除）。
+
+## 接入真实 AI
+
+1. 打开「AI 库」→「新建 AI」。
+2. 选择厂商（OpenAI / Claude / Gemini / DeepSeek / 通义千问 / Kimi / 智谱 GLM / MiniMax / 豆包 / 腾讯混元 / 百度文心 / 讯飞星火），填写模型 ID 与 API 密钥（密钥仅存在本机并加密，绝不回传前端）。
+3. 设置思考强度与角色偏好，保存后点「测连」验证。
+4. 没有密钥也能玩：厂商选「本地规则引擎」即可。
+
+各厂商默认模型与 API 地址已在服务端预置，可在表单「自定义 API 地址」处覆盖（兼容 OpenAI 协议的任意网关都行）。
+
+> 思考强度说明：纸=极简、中=均衡、高=深入、特高=深度推演。OpenAI o 系走 `reasoning_effort`，Gemini 走 `thinkingConfig.thinkingBudget`，通义 Qwen3 走 `enable_thinking`，其余厂商用提示词指令 + 输出 token 预算兜底。
+
+## 玩法
+
+- **AI 库**：卡片式管理，支持新建 / 编辑 / 复制 / 删除 / 测连 / JSON 与 CSV 批量导入导出 / 按名称·厂商·强度筛选 / 查看详情与历史对局。
+- **新建对局**：多选 AI，自动或手动定档，随机 / 强度匹配 / 按偏好分配角色，支持全局思考强度覆盖与预设阵容保存。
+- **观战**：实时座位盘 + 事件时间线（SSE 推送），上帝视角可看所有身份与夜间行动；对局结束显示结算报告（胜方、MVP、发言数、token 用量）。
+- **历史**：全部对局记录，点击可回放事件时间线。
+
+## 规则约定（标准变体）
+
+- 猎人被刀或被票出局可开枪，被毒不能开枪
+- 白痴被票出局翻牌免死，此后失去投票权但可继续发言；白痴夜晚被刀正常死亡
+- 女巫解药/毒药各一瓶，首夜可自救，可同一夜救+毒；狼刀与毒同目标时只记一次死亡
+- 平票无人出局（平安日）；狼人数量 ≥ 好人存活数时狼人获胜，狼人全灭时好人获胜
+
+
+## GitHub Pages 部署
+
+> ⚠️ GitHub Pages 只能托管静态文件，无法运行 Node/SQLite 后端。因此 Pages 上部署的是**前端界面**，游戏引擎仍需在你自己的机器上运行（或把后端部署到任意可访问的服务器）。
+
+线上预览：<https://sun-zihang.github.io/ai-werewolf/>
+
+### 静态界面如何连上后端
+
+- 本地完整使用：直接 `npm run start` 访问 http://localhost:3001（无需 Pages）。
+- 在 Pages 上联调本机后端：本机运行 `npm run start`（若需手机/其他机器访问，加 `--host`），然后在仓库 Actions 的「Build web」步骤把 `VITE_API_BASE` 设为你的后端地址（如 `http://192.168.x.x:3001`）后重新构建部署。
+- 未配置后端时，Pages 界面会显示「后端未连接」提示，AI 库与对局功能不可用。
+
+### 发布流程（已配置好）
+
+1. 代码推送到 `main`。
+2. GitHub Actions 自动执行 `.github/workflows/pages.yml`：安装 web 依赖 → 构建 `web/dist` → 部署到 GitHub Pages。
+3. 手动重新部署：仓库 Actions → Deploy to GitHub Pages → Run workflow。
+## 测试
+
+```bash
+npm test          # 服务端单测 + 集成（引擎、适配器、mock 完整对局）
+npm run test:e2e  # Playwright 冒烟：建 AI → 开一局 → 观战到结束 → 报告（截图存 screenshots/）
+```
+
+## 目录结构
+
+```
+server/   Express + node:sqlite 后端（引擎、AI 中台、REST API、SSE）
+web/      Vite + React + TypeScript 前端
+scripts/  e2e-smoke.mjs 端到端冒烟
+data/     运行时生成（数据库 + 主密钥），已 gitignore
+```
+
+## 安全说明
+
+- API 密钥仅在本机加密存储，后端代理调用，前端永远拿不到明文。
+- 单用户 AI 档案上限 50，单局 AI 上限 12。
+- 删除档案 / 修改密钥前均有二次确认。

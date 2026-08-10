@@ -1,0 +1,20 @@
+:root {
+  --paper: #faf8f4;
+  --paper-deep: #f1ede5;
+  --paper-mid: #f6f2eb;
+  --ink: #201d19;
+  --ink-soft: #6f675c;
+  --ink-faint: #a49b8f;
+  --line: #e6e0d4;
+  --line-strong: #d2c9ba;
+  --accent: #b3402a;
+  --accent-soft: #f4e6e0;
+  --good: #2f6b4f;
+  --good-soft: #e4eee7;
+  --wolf: #8a2f22;
+  --serif: "Noto Serif SC", "Songti SC", "SimSun", "Source Han Serif SC", Georgia, serif;
+  --sans: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  --radius: 6px;
+  --shadow: 0 1px 0 rgba(32, 29, 25, 0.04);
+}
