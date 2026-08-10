@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+import { PROVIDERS, providerLabel } from "../providers";
 import { AiProfilePublic, GameListItem, LEVEL_LABEL, LEVELS, ProviderMeta, Role, ROLES, ROLE_LABEL, STATUS_LABEL, TEAM_LABEL, ThinkingLevel } from "../types";
 import Avatar from "../components/Avatar";
 import LevelTag from "../components/LevelTag";
@@ -35,7 +36,6 @@ const EMPTY: FormState = {
 
 export default function LibraryPage({ go }: { go: (hash: string) => void }) {
   const [profiles, setProfiles] = useState<AiProfilePublic[]>([]);
-  const [providers, setProviders] = useState<ProviderMeta[]>([]);
   const [search, setSearch] = useState("");
   const [filterProvider, setFilterProvider] = useState("");
   const [filterLevel, setFilterLevel] = useState("");
@@ -59,7 +59,6 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
 
   useEffect(() => {
     load();
-    api.providers().then(setProviders).catch(() => {});
   }, [load]);
 
   const filtered = useMemo(() => {
@@ -191,7 +190,7 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
           <input type="search" placeholder="搜索名称 / 模型 / 厂商" value={search} onChange={(e) => setSearch(e.target.value)} />
           <select value={filterProvider} onChange={(e) => setFilterProvider(e.target.value)}>
             <option value="">全部厂商</option>
-            {providers.filter((p) => p.id !== "local").map((p) => (
+            {PROVIDERS.filter((p) => p.id !== "local").map((p) => (
               <option key={p.id} value={p.id}>{p.label}</option>
             ))}
           </select>
@@ -229,7 +228,7 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
                   <Avatar name={p.name} style={p.avatar_style} />
                   <div style={{ minWidth: 0 }}>
                     <div className="name" style={{ cursor: "pointer" }} onClick={() => openDetail(p)} title="查看详情">{p.name}</div>
-                    <div className="provider">{providerLabel(providers, p.provider)} · {p.model}</div>
+                    <div className="provider">{providerLabel(p.provider)} · {p.model}</div>
                   </div>
                 </div>
                 <div className="meta">
@@ -266,7 +265,6 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
         <DetailModal
           profile={detail}
           games={detailGames}
-          providerLabel={providerLabel}
           onClose={() => setDetail(null)}
           go={go}
         />
@@ -274,7 +272,7 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
 
       {(creating || editing) && (
         <ProfileFormModal
-          providers={providers}
+          providers={PROVIDERS}
           profile={editing}
           onClose={() => {
             setCreating(false);
@@ -292,10 +290,6 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
       )}
     </div>
   );
-}
-
-function providerLabel(providers: ProviderMeta[], id: string): string {
-  return providers.find((p) => p.id === id)?.label ?? id;
 }
 
 function downloadBlob(blob: Blob, name: string) {
@@ -339,7 +333,7 @@ function ProfileFormModal({
           avatar_style: profile.avatar_style,
           description: profile.description,
         }
-      : { ...EMPTY, provider: providers[0]?.id ?? "openai" }
+      : { ...EMPTY, provider: PROVIDERS[0]?.id ?? "openai" }
   );
 
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
@@ -475,13 +469,11 @@ function ProfileFormModal({
 function DetailModal({
   profile,
   games,
-  providerLabel,
   onClose,
   go,
 }: {
   profile: AiProfilePublic;
   games: GameListItem[];
-  providerLabel: (providers: ProviderMeta[], id: string) => string;
   onClose: () => void;
   go: (hash: string) => void;
 }) {
@@ -491,7 +483,7 @@ function DetailModal({
         <Avatar name={profile.name} style={profile.avatar_style} size={48} />
         <div>
           <div style={{ fontFamily: "var(--serif)", fontSize: 18 }}>{profile.name}</div>
-          <div className="muted">{providerLabel([], profile.provider)} · {profile.model}</div>
+          <div className="muted">{providerLabel(profile.provider)} · {profile.model}</div>
         </div>
       </div>
       <div className="form-grid">
