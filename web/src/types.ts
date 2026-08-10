@@ -1,5 +1,5 @@
 export type ThinkingLevel = "paper" | "medium" | "high" | "extra";
-export const LEVEL_LABEL: Record<ThinkingLevel, string> = { paper: "纸", medium: "中", high: "高", extra: "特高" };
+export const LEVEL_LABEL: Record<ThinkingLevel, string> = { paper: "低", medium: "中", high: "高", extra: "特高" };
 export const LEVELS: ThinkingLevel[] = ["paper", "medium", "high", "extra"];
 
 export type Role = "werewolf" | "villager" | "seer" | "witch" | "hunter" | "idiot";

@@ -13,7 +13,7 @@ const MODE_OPTIONS: { id: "auto" | GameMode; label: string; hint: string; range:
 
 const ASSIGN_OPTIONS: { id: RoleAssignment; label: string; hint: string }[] = [
   { id: "random", label: "随机分配", hint: "角色完全随机" },
-  { id: "strength", label: "强度匹配", hint: "强 AI 拿预言家/狼人，纸级拿村民" },
+  { id: "strength", label: "强度匹配", hint: "强 AI 拿预言家/狼人，低级拿村民" },
   { id: "preference", label: "按偏好分配", hint: "优先满足每个 AI 的角色偏好" },
 ];
 

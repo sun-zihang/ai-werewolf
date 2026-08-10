@@ -20,7 +20,7 @@ export interface ChatResult {
 }
 
 export const LEVEL_META: Record<ThinkingLevel, { label: string; timeoutMs: number; maxTokens: number }> = {
-  paper: { label: "纸", timeoutMs: 20000, maxTokens: 220 },
+  paper: { label: "低", timeoutMs: 20000, maxTokens: 220 },
   medium: { label: "中", timeoutMs: 30000, maxTokens: 320 },
   high: { label: "高", timeoutMs: 45000, maxTokens: 450 },
   extra: { label: "特高", timeoutMs: 60000, maxTokens: 600 },

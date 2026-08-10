@@ -5,7 +5,7 @@
 - 浅色纸感极简界面，无渐变 / 无玻璃拟态
 - 完整规则状态机：夜间（狼刀 → 预言家查验 → 女巫救/毒）→ 白天（公布死讯 → 遗言 → 发言 → 投票 → 出局/白痴翻牌/猎人开枪）→ 胜负判定
 - 三档人数模式：简易 2–4 人、标准 5–8 人、复杂 9–12 人
-- 思考强度四档：纸 / 中 / 高 / 特高，映射到各厂商原生思考参数
+- 思考强度四档：低 / 中 / 高 / 特高，映射到各厂商原生思考参数
 - 超时熔断、非法动作拦截重试、降级兜底；API 密钥 AES-256-GCM 加密存储
 
 ## 快速开始
@@ -41,7 +41,7 @@ npm run start   # 后端 3001 直接托管前端
 
 各厂商默认模型与 API 地址已在服务端预置，可在表单「自定义 API 地址」处覆盖（兼容 OpenAI 协议的任意网关都行）。
 
-> 思考强度说明：纸=极简、中=均衡、高=深入、特高=深度推演。OpenAI o 系走 `reasoning_effort`，Gemini 走 `thinkingConfig.thinkingBudget`，通义 Qwen3 走 `enable_thinking`，其余厂商用提示词指令 + 输出 token 预算兜底。
+> 思考强度说明：低=极简、中=均衡、高=深入、特高=深度推演。OpenAI o 系走 `reasoning_effort`，Gemini 走 `thinkingConfig.thinkingBudget`，通义 Qwen3 走 `enable_thinking`，其余厂商用提示词指令 + 输出 token 预算兜底。
 
 ## 玩法
 
