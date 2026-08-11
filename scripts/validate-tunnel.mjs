@@ -24,7 +24,7 @@ async function main() {
 
   await fetch(`${BASE}/api/games/${gameId}/start`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ speed_ms: 200 }),
+    body: JSON.stringify({ pace: process.env.PACE ?? "fast" }),
   });
 
   // 轮询 events-list（模拟前端 2s 轮询，这里用 1s 更灵敏），观察实时增量
