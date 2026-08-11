@@ -39,7 +39,7 @@ function newGame(players: ReturnType<typeof makePlayers>, decide: (i: DecisionIn
     decide: async (i) => decide(i),
     validate: () => null,
     onTokens: () => {},
-    speedMs: 0,
+    pace: { night: 0, speech: 0, vote: 0, lastwords: 0, hunter: 0, phaseGap: 0 },
     validateRoles: false,
   });
 }

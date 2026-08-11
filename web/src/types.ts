@@ -145,6 +145,8 @@ export interface HumanView {
   joined: boolean;
   myName: string | null;
   humans: { seat: number; name: string | null }[];
+  /** 全部玩家 seat → 显示名映射，用于把时间线事件里的 playerId/targetId 解析成名字 */
+  nameMap: Record<number, string>;
   status: GameStatus;
   round: number;
   phase: string;

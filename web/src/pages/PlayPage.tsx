@@ -21,19 +21,20 @@ const TARGET_ACTIONS = new Set([
 /** 允许「跳过/不X」的行动 */
 const SKIPPABLE = new Set(["night_save", "night_poison", "day_vote", "hunter_shot"]);
 
-function eventText(e: any): string {
+function eventText(e: any, nameMap: Record<number, string>): string {
+  const nm = (id: number) => nameMap[id] ?? `座位${id}`;
   switch (e.type) {
     case "phase": return `【${e.label ?? e.phase}】`;
     case "night_action": {
       const a = ACTION_LABEL[e.action as string] ?? e.action;
-      return `${e.playerName ?? "某人"} ${a}${e.targetName ? " → " + e.targetName : ""}`;
+      return `${nm(Number(e.playerId))} ${a}${e.targetId !== undefined && e.targetId !== null ? " → " + nm(Number(e.targetId)) : ""}`;
     }
-    case "day_speech": return `${e.playerName ?? "某人"}：${e.content ?? ""}`;
-    case "vote": return `${e.playerName ?? "某人"} 投给 ${e.targetName ?? "弃票"}`;
-    case "vote_result": return `放逐结果：${e.targetName ?? "无人出局"}`;
-    case "death": return `${e.playerName ?? "某人"} 出局`;
-    case "last_words": return `${e.playerName ?? "某人"}（遗言）：${e.content ?? ""}`;
-    case "human_turn": return `等待 ${e.playerName ?? "真人"} 操作…`;
+    case "day_speech": return `${nm(Number(e.playerId))}：${e.content ?? ""}`;
+    case "vote": return `${nm(Number(e.playerId))} 投给 ${e.targetId !== undefined && e.targetId !== null ? nm(Number(e.targetId)) : "弃票"}`;
+    case "vote_result": return `放逐结果：${e.eliminatedId !== undefined && e.eliminatedId !== null ? nm(Number(e.eliminatedId)) + " 被放逐" : "无人出局"}`;
+    case "death": return `${nm(Number(e.playerId))} 出局`;
+    case "last_words": return `${nm(Number(e.playerId))}（遗言）：${e.content ?? ""}`;
+    case "human_turn": return `等待 ${nm(Number(e.playerId))}（真人）操作…`;
     case "game_over": return `对局结束 · ${TEAM_LABEL[e.winner as "wolf" | "good"] ?? e.winner} 获胜`;
     default: return "";
   }
@@ -139,6 +140,8 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
 
   const isTarget = TARGET_ACTIONS.has(view.requiredAction ?? "");
   const canSkip = SKIPPABLE.has(view.requiredAction ?? "");
+  // 需要选目标但没有可选目标（如女巫救人时本夜无人被刀）：无需操作，只给跳过
+  const noTarget = isTarget && view.options.length === 0;
   const actLabel = ACTION_LABEL[view.requiredAction ?? ""] ?? view.requiredAction;
   const myTeam = view.role ? (view.role === "werewolf" ? "wolf" : "good") : null;
   const iWon = view.winner && myTeam && view.winner === myTeam;
@@ -163,6 +166,13 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
         </div>
       </div>
 
+      {view.status === "created" && (
+        <div className="card wait-start">
+          <div className="turn-banner">已就座，等待房主开始对局…</div>
+          <div className="small muted">房主在另一台设备点「开始对局」后，这里会立即进入游戏，并揭晓你的角色。请保持本页面打开。</div>
+        </div>
+      )}
+
       {view.status === "finished" && (
         <div className={`card result-card ${iWon ? "win" : "lose"}`}>
           <div className="result-title">{iWon ? "你赢了" : "你输了"}</div>
@@ -173,7 +183,16 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
       {view.yourTurn && view.status !== "finished" && (
         <div className="card my-turn">
           <div className="turn-banner">轮到你了：{actLabel}</div>
-          {isTarget ? (
+          {noTarget ? (
+            <div className="turn-body">
+              <div className="small muted">{view.requiredAction === "night_save" ? "本夜无人被刀，无需救人。" : "当前没有可操作的目标。"}</div>
+              <div className="actions">
+                <button className="primary" disabled={submitting} onClick={() => submitAction({ target_id: null })}>
+                  {skipLabel(view.requiredAction) || "确认"}
+                </button>
+              </div>
+            </div>
+          ) : isTarget ? (
             <div className="turn-body">
               <select value={target} onChange={(e) => setTarget(e.target.value === "" ? "" : Number(e.target.value))}>
                 <option value="">{view.requiredAction === "night_save" ? "是否救人…" : "选择目标…"}</option>
@@ -184,7 +203,7 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
               <div className="actions">
                 <button
                   className="primary"
-                  disabled={submitting || (target === "" && view.requiredAction !== "night_save")}
+                  disabled={submitting || target === ""}
                   onClick={() => submitAction({ target_id: target === "" ? null : Number(target) })}
                 >
                   {view.requiredAction === "night_save" ? "救人" : "确认"}
@@ -235,7 +254,7 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
             {view.timeline.map((e) => (
               <div key={e.seq} className={`tl-item ${e.type}`}>
                 <span className="tl-round">D{e.round}</span>
-                <span className="tl-text">{eventText(e)}</span>
+                <span className="tl-text">{eventText(e, view.nameMap)}</span>
               </div>
             ))}
           </div>

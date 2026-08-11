@@ -32,7 +32,8 @@ describe("端到端：本地规则引擎完整对局", () => {
       ids.push(Number(row.lastInsertRowid));
     }
 
-    const gameId = createGame(db, { ai_ids: ids, mode: "auto", assignment: "random" });
+    const created = createGame(db, { ai_ids: ids, mode: "auto", assignment: "random" });
+    const gameId = created.id;
     expect(gameId).toBeGreaterThan(0);
 
     const state0 = getGameState(db, gameId);

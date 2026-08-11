@@ -22,6 +22,7 @@ export function makePlayers(roles: Role[], opts?: { levels?: ThinkingLevel[]; na
       speechCount: 0,
       tokensUsed: 0,
       votesReceived: 0,
+      isHuman: false,
     };
   });
 }

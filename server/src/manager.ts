@@ -74,7 +74,7 @@ function safeJson(s: string, fallback: any): any {
 }
 
 // ---------- 创建对局 ----------
-export function createGame(db: Db, input: GameConfigInput): number {
+export function createGame(db: Db, input: GameConfigInput): { id: number; humanInvites: { seat: number; token: string }[] } {
   const humanCount = Math.min(4, Math.max(0, Math.floor(input.human_count ?? 0)));
   const ids = [...new Set(input.ai_ids)];
   const total = ids.length + humanCount;
@@ -458,6 +458,12 @@ export function getHumanView(db: Db, gameId: number, token: string): any {
   const m: any = db.prepare("SELECT * FROM game_ai_mapping WHERE game_id=? AND human_token=?").get(gameId, token);
   if (!m) throw new Error("座位不存在或链接无效");
   const humans = humanSeats(db, gameId);
+  // 全部玩家 seat → 显示名映射，供前端把事件里的 playerId/targetId 解析成名字
+  const allMappings: any[] = db.prepare("SELECT seat, human_name, is_human, profile_id FROM game_ai_mapping WHERE game_id=? ORDER BY seat").all(gameId);
+  const nameMap: Record<number, string> = {};
+  for (const am of allMappings) {
+    nameMap[am.seat] = am.human_name ?? (am.is_human ? `真人${am.seat}` : (getProfileRow(db, am.profile_id)?.name ?? `玩家${am.seat}`));
+  }
   const base = {
     gameId,
     seat: m.seat,
@@ -465,6 +471,7 @@ export function getHumanView(db: Db, gameId: number, token: string): any {
     joined: !!m.human_name,
     myName: m.human_name ?? null,
     humans,
+    nameMap,
     privateInfo: [] as string[],
     yourTurn: false,
     requiredAction: undefined as string | undefined,
@@ -475,7 +482,15 @@ export function getHumanView(db: Db, gameId: number, token: string): any {
   if (!rg) {
     const session: any = db.prepare("SELECT * FROM game_sessions WHERE id=?").get(gameId);
     if (!session) throw new Error("对局不存在");
-    return { ...base, status: session.status, round: 0, phase: "pending", role: undefined };
+    return {
+      ...base,
+      status: session.status,
+      round: session.rounds ?? 0,
+      phase: session.status === "finished" || session.status === "aborted" ? "game_over" : "pending",
+      role: undefined,
+      winner: session.winner ?? null,
+      reason: session.reason ?? null,
+    };
   }
   const engine = rg.engine;
   const p = engine.byId(m.seat);

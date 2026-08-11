@@ -160,7 +160,7 @@ export class WerewolfGame {
     this.opts.emit(evt);
   }
 
-  private alive(role?: Role): EnginePlayer[] {
+  alive(role?: Role): EnginePlayer[] {
     return this.players.filter((p) => p.alive && (!role || p.role === role));
   }
 
@@ -282,7 +282,7 @@ export class WerewolfGame {
     return lines;
   }
 
-  private privateInfoFor(p: EnginePlayer): string[] {
+  privateInfoFor(p: EnginePlayer): string[] {
     const info: string[] = [];
     if (p.role === "werewolf") {
       const mates = this.players.filter((x) => x.role === "werewolf" && x.alive);
