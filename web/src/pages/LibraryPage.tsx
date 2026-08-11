@@ -36,7 +36,7 @@ const EMPTY: FormState = {
   description: "",
 };
 
-export default function LibraryPage({ go }: { go: (hash: string) => void }) {
+export default function LibraryPage({ go, onOpenSettings }: { go: (hash: string) => void; onOpenSettings?: () => void }) {
   const [profiles, setProfiles] = useState<AiProfilePublic[]>([]);
   const offline = useOffline();
   const [search, setSearch] = useState("");
@@ -49,14 +49,20 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
   const [testing, setTesting] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<Record<number, { ok: boolean; msg: string }>>({});
   const [error, setError] = useState("");
+  const [backendMissing, setBackendMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
       setProfiles(await api.listProfiles());
+      setBackendMissing(false);
+      setError("");
     } catch (e: any) {
-      if (!isOffline()) setError(e.message);
+      const msg = e.message || "";
+      const missing = /html|无法连接后端|后端未运行|后端地址/i.test(msg);
+      setBackendMissing(missing);
+      if (!isOffline()) setError(missing ? "" : e.message);
     }
   }, []);
 
@@ -219,10 +225,13 @@ export default function LibraryPage({ go }: { go: (hash: string) => void }) {
       </div>
       {error && !offline && <div className="err" style={{ marginBottom: 14 }}>{error}</div>}
 
+      {backendMissing && (
+        <BackendMissingCard onOpenSettings={onOpenSettings} />
+      )}
       {filtered.length === 0 ? (
         offline ? (
           <OfflineCard />
-        ) : (
+        ) : backendMissing ? null : (
           <div className="empty">还没有 AI 档案。点击「新建 AI」或「导入」开始添加。</div>
         )
       ) : (
@@ -306,6 +315,36 @@ function downloadBlob(blob: Blob, name: string) {
   a.download = name;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function BackendMissingCard({ onOpenSettings }: { onOpenSettings?: () => void }) {
+  return (
+    <div className="empty backend-missing">
+      <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}>未连接后端</div>
+      <div style={{ marginBottom: 16, color: "var(--ink-soft)", maxWidth: 520 }}>
+        Cloudflare Pages / GitHub Pages 仅托管前端界面，游戏引擎与数据存储需要自托管后端。
+      </div>
+      <ol
+        style={{
+          textAlign: "left",
+          margin: "0 auto 18px",
+          maxWidth: 520,
+          color: "var(--ink-soft)",
+          lineHeight: 1.8,
+          paddingLeft: 20,
+        }}
+      >
+        <li>在本机启动后端：<code className="mono">npm run start</code></li>
+        <li>或使用 Docker / CloudBase / 云服务器部署后端服务</li>
+        <li>点击右上角 <b>⚙ 后端</b> 填入后端地址（如 <code className="mono">http://localhost:3001</code>）</li>
+      </ol>
+      {onOpenSettings && (
+        <button className="primary" onClick={onOpenSettings}>
+          打开后端设置
+        </button>
+      )}
+    </div>
+  );
 }
 
 function ProfileFormModal({

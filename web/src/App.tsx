@@ -118,7 +118,15 @@ export default function App() {
         <span className="hint">AI 自动对局 · 支持 1-4 名真人加入</span>
       </header>
       <main className="page">
-        {route.page === "library" && <LibraryPage go={go} />}
+        {route.page === "library" && (
+          <LibraryPage
+            go={go}
+            onOpenSettings={() => {
+              setApiInput(getApiBase());
+              setShowSettings(true);
+            }}
+          />
+        )}
         {route.page === "new" && <NewGamePage go={go} />}
         {route.page === "live" && <LivePage go={go} />}
         {route.page === "game" && <SpectatePage gameId={route.id} />}

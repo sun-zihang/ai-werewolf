@@ -19,21 +19,48 @@ export function setApiBase(value: string): string {
   return clean;
 }
 
+function looksLikeHtml(text: string, contentType: string | null): boolean {
+  const start = text.trimStart().toLowerCase();
+  return start.startsWith("<!doctype") || start.startsWith("<html") || (contentType ?? "").includes("text/html");
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${getApiBase()}${url}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${url}`, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+  } catch (e: any) {
+    throw new Error(`无法连接后端：${e.message || "网络请求失败"}。请在右上角「⚙ 后端」检查后端地址，或确认后端服务已启动。`);
+  }
+
+  const contentType = res.headers.get("content-type");
+  const text = await res.text();
+
   if (!res.ok) {
     let msg = `请求失败 ${res.status}`;
     if (res.status === 404) msg = "后端接口不存在（404）—— 请确认已在本机启动后端（npm run start）";
-    try {
-      const body = await res.json();
-      if (body?.error) msg = body.error;
-    } catch { /* ignore */ }
+    else if (looksLikeHtml(text, contentType)) {
+      msg = "后端未运行或地址错误：收到 HTML 页面而非接口数据。Cloudflare Pages / GitHub Pages 仅托管前端，请在右上角「⚙ 后端」填入你的后端地址。";
+    } else {
+      try {
+        const body = JSON.parse(text);
+        if (body?.error) msg = body.error;
+      } catch { /* ignore */ }
+    }
     throw new Error(msg);
   }
-  return res.json() as Promise<T>;
+
+  if (looksLikeHtml(text, contentType)) {
+    throw new Error("后端未运行或地址错误：收到 HTML 页面而非接口数据。Cloudflare Pages / GitHub Pages 仅托管前端，请在右上角「⚙ 后端」填入你的后端地址。");
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (e: any) {
+    throw new Error(`后端返回无法解析：${e.message}`);
+  }
 }
 
 export const api = {
