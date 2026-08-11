@@ -1,10 +1,26 @@
 import type { AiProfilePublic, CreateGameResult, GameEvent, GameListItem, GameReport, GameState, HumanView, Preset, ProviderMeta } from "./types";
 
-/** 后端地址：构建时可用 VITE_API_BASE 覆盖（如部署在 GitHub Pages 时指向你本机后端） */
-export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") ?? "";
+/** 后端地址：运行时优先读 localStorage（便于 GitHub Pages 指向自托管后端），回退到构建期 VITE_API_BASE */
+const STORAGE_KEY = "aww_api_base";
+export function getApiBase(): string {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && saved.trim()) return saved.trim().replace(/\/+$/, "");
+  } catch { /* ignore */ }
+  return (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") ?? "";
+}
+/** 运行时设置后端地址并持久化（留空则清除，回退到相对路径 / 构建期配置） */
+export function setApiBase(value: string): string {
+  const clean = (value || "").trim().replace(/\/+$/, "");
+  try {
+    if (clean) localStorage.setItem(STORAGE_KEY, clean);
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch { /* ignore */ }
+  return clean;
+}
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await fetch(`${getApiBase()}${url}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -57,7 +73,7 @@ export function subscribeEvents(
   onEvent: (e: GameEvent) => void,
   onStatus?: (status: "connecting" | "open" | "error") => void
 ): () => void {
-  const es = new EventSource(`${API_BASE}/api/games/${gameId}/events`);
+  const es = new EventSource(`${getApiBase()}/api/games/${gameId}/events`);
   onStatus?.("connecting");
   es.onopen = () => onStatus?.("open");
   es.onerror = () => onStatus?.("error");

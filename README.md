@@ -68,7 +68,8 @@ npm run start   # 后端 3001 直接托管前端
 ### 静态界面如何连上后端
 
 - 本地完整使用：直接 `npm run start` 访问 http://localhost:3001（无需 Pages）。
-- 在 Pages 上联调本机后端：本机运行 `npm run start`（若需手机/其他机器访问，加 `--host`），然后在仓库 Actions 的「Build web」步骤把 `VITE_API_BASE` 设为你的后端地址（如 `http://192.168.x.x:3001`）后重新构建部署。
+- 在 Pages 上连后端（推荐，免重建）：打开线上站点，点右上角 **⚙ 后端**，填入你自托管的后端地址（如 `http://192.168.x.x:3001` 或 Docker/CloudBase 分配的域名），保存即生效，设置保存在浏览器本地。
+- 在 Pages 上联调本机后端（构建期固定）：本机运行 `npm run start`（若需手机/其他机器访问，加 `--host`），然后在仓库 Actions 的「Build web」步骤把 `VITE_API_BASE` 设为你的后端地址（如 `http://192.168.x.x:3001`）后重新构建部署。
 - 未配置后端时，Pages 界面会显示「后端未连接」提示，AI 库与对局功能不可用。
 
 ### 发布流程（已配置好）

@@ -281,13 +281,14 @@ export async function startGame(db: Db, gameId: number, pace: PaceKey | number =
 
   db.prepare("UPDATE game_sessions SET status='running', started_at=datetime('now','localtime') WHERE id=?").run(gameId);
 
-  engine.run().finally(() => {
-    finalizeGame(db, gameId, rg);
-    // 结束 1 分钟后从内存移除
-    setTimeout(() => {
-      if (running.get(gameId) === rg) running.delete(gameId);
-    }, 60_000);
-  });
+    engine.run().finally(() => {
+      finalizeGame(db, gameId, rg);
+      // 结束一段时间后从内存移除（默认 60s，测试可用 AWW_CLEANUP_MS 加速）
+      const cleanupMs = Number(process.env.AWW_CLEANUP_MS) || 60_000;
+      setTimeout(() => {
+        if (running.get(gameId) === rg) running.delete(gameId);
+      }, cleanupMs);
+    });
 }
 
 function validateDecision(engine: WerewolfGame, selfId: number, action: string, out: DecisionOutput): string | null {
