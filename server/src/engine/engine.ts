@@ -71,6 +71,40 @@ export interface EngineOpts {
   pace?: PaceProfile;
   humanTimeoutMs?: number; // 真人操作超时（毫秒），超时则由 AI 自动托管
   validateRoles?: boolean;
+  /**
+   * 真人座位决策钩子（可选）。
+   * 常驻进程模式下不传，走内置的 waitHumanInput（Promise 挂起 + 定时器托管）；
+   * 无状态模式（Cloudflare Workers 的「快照 + 日志重放」驱动）传入此钩子，
+   * 由驱动器决定「读日志 / 读收件箱 / 抛出挂起信号」，从而不依赖长生命周期进程。
+   */
+  humanDecide?: (
+    player: EnginePlayer,
+    requiredAction: DecisionInput["requiredAction"],
+    phaseLabel: string
+  ) => Promise<DecisionOutput>;
+}
+
+/** 引擎状态快照：用于无状态环境下在「回合边界」持久化并恢复对局 */
+export interface EngineSnapshot {
+  v: 1;
+  seq: number;
+  round: number;
+  phase: PhaseId;
+  status: "created" | "running" | "paused" | "finished" | "aborted";
+  winner?: Team;
+  reason?: string;
+  players: EnginePlayer[];
+  nightKillTarget?: number;
+  witchSavedTarget?: number;
+  witchPoisonTarget?: number;
+  seerCheckResults: [number, Team][];
+  pendingDeaths: PendingDeath[];
+  speechLog: SpeechEntry[];
+  votes: [number, number | null][];
+  pendingHunter?: { id: number; cause: "wolf" | "vote" };
+  pendingLastWords?: number;
+  lastRoundKillTarget?: number;
+  voteEliminatedId?: number;
 }
 
 export type PaceKey = "slow" | "normal" | "fast";
@@ -171,7 +205,11 @@ export class WerewolfGame {
   }
 
   private async decideFor(player: EnginePlayer, requiredAction: DecisionInput["requiredAction"], phaseLabel: string): Promise<DecisionOutput> {
-    if (player.isHuman) return this.waitHumanInput(player, requiredAction, phaseLabel);
+    if (player.isHuman) {
+      return this.opts.humanDecide
+        ? this.opts.humanDecide(player, requiredAction, phaseLabel)
+        : this.waitHumanInput(player, requiredAction, phaseLabel);
+    }
     const input: DecisionInput = {
       player: { id: player.id, name: player.name, seat: player.seat, role: player.role, team: player.team, alive: player.alive },
       thinkingLevel: player.thinkingLevel,
@@ -690,6 +728,95 @@ export class WerewolfGame {
       return true;
     }
     return false;
+  }
+
+  // ---------- 无状态驱动支持（快照 / 单回合推进） ----------
+
+  /** 供无状态驱动器使用：只推进一个回合，返回是否终局 */
+  async runOneRound(): Promise<boolean> {
+    if (this.status === "finished" || this.status === "aborted") return true;
+    this.status = "running";
+    return this.playRound();
+  }
+
+  /** 供无状态驱动器使用：标记开局并发出 game_started（只在首次调用时使用） */
+  markStarted() {
+    this.status = "running";
+    this.emit("game_started", { mode: this.mode, assignment: this.assignment, secret: false });
+  }
+
+  /**
+   * 供无状态驱动器补发事件。
+   * 关键约束：这些补发必须在「每一次重放里都无条件发生」，否则 seq 会错位。
+   * 条件性的提示（例如真人超时托管）必须随决策一起写进日志，重放时照样补发。
+   */
+  emitHumanTurn(player: EnginePlayer, requiredAction: DecisionInput["requiredAction"], phaseLabel: string) {
+    this.emit("human_turn", { playerId: player.id, seat: player.seat, action: requiredAction, label: phaseLabel });
+  }
+
+  systemNote(message: string, secret = false) {
+    this.emit("system", { message, secret });
+  }
+
+  /** 真人超时托管的默认合法决策（公开给驱动器，供无状态模式下写入日志） */
+  autoDecisionFor(
+    player: EnginePlayer,
+    requiredAction: DecisionInput["requiredAction"],
+    phaseLabel = ""
+  ): DecisionOutput {
+    return this.autoDecision(player, requiredAction, phaseLabel);
+  }
+
+  /** 导出快照（只在回合边界调用，保证与 playRound 的重入点对齐） */
+  snapshot(): EngineSnapshot {
+    return {
+      v: 1,
+      seq: this.seq,
+      round: this.round,
+      phase: this.phase,
+      status: this.status,
+      winner: this.winner,
+      reason: this.reason,
+      // 深拷贝，避免驱动器复用引用导致的隐式状态泄漏
+      players: this.players.map((p) => ({ ...p })),
+      nightKillTarget: this.nightKillTarget,
+      witchSavedTarget: this.witchSavedTarget,
+      witchPoisonTarget: this.witchPoisonTarget,
+      seerCheckResults: [...this.seerCheckResults.entries()],
+      pendingDeaths: this.pendingDeaths.map((d) => ({ ...d })),
+      // 公共发言日志只用于给 AI 拼上下文（publicLogLines 取最后 40 条），截断以控制快照体积
+      speechLog: this.speechLog.slice(-40).map((s) => ({ ...s })),
+      votes: [...this.votes.entries()],
+      pendingHunter: this.pendingHunter ? { ...this.pendingHunter } : undefined,
+      pendingLastWords: this.pendingLastWords,
+      lastRoundKillTarget: this.lastRoundKillTarget,
+      voteEliminatedId: this.voteEliminatedId,
+    };
+  }
+
+  /** 从快照恢复（players 数组按 seat 覆盖，保持 opts.players 引用不变以便 decide 回调查找） */
+  restore(s: EngineSnapshot) {
+    this.seq = s.seq;
+    this.round = s.round;
+    this.phase = s.phase;
+    this.status = s.status;
+    this.winner = s.winner;
+    this.reason = s.reason;
+    for (const snap of s.players) {
+      const p = this.players.find((x) => x.id === snap.id);
+      if (p) Object.assign(p, snap);
+    }
+    this.nightKillTarget = s.nightKillTarget;
+    this.witchSavedTarget = s.witchSavedTarget;
+    this.witchPoisonTarget = s.witchPoisonTarget;
+    this.seerCheckResults = new Map(s.seerCheckResults);
+    this.pendingDeaths = s.pendingDeaths ?? [];
+    this.speechLog = s.speechLog ?? [];
+    this.votes = new Map(s.votes ?? []);
+    this.pendingHunter = s.pendingHunter;
+    this.pendingLastWords = s.pendingLastWords;
+    this.lastRoundKillTarget = s.lastRoundKillTarget;
+    this.voteEliminatedId = s.voteEliminatedId;
   }
 
   get state() {

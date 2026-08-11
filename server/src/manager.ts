@@ -262,6 +262,7 @@ export async function startGame(db: Db, gameId: number, pace: PaceKey | number =
       const out = await decide({
         profile,
         input,
+        decryptKey: (enc) => decryptSecret(enc),
         validate: (o) => validateDecision(engine, input.player.id, input.requiredAction, o),
         onTokens: (usage) => {
           p.tokensUsed += usage.totalTokens ?? 0;

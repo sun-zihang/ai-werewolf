@@ -1,5 +1,4 @@
 import { DecisionInput, DecisionOutput, ThinkingLevel } from "../types.js";
-import { decryptSecret } from "../crypto.js";
 import { callProvider, LEVEL_META } from "./adapters.js";
 import { buildMessages } from "./prompts.js";
 import { decideLocal, fallbackSpeech } from "./localEngine.js";
@@ -19,6 +18,12 @@ export interface DecideOptions {
   input: DecisionInput;
   validate: (out: DecisionOutput) => string | null;
   onTokens?: (usage: { thinkingTokens?: number; outputTokens?: number; totalTokens?: number }) => void;
+  /**
+   * 解密 api_key_enc 的实现由调用方注入。
+   * 这样本模块不依赖任何运行时专有 API（node:crypto / Web Crypto），
+   * 可同时在 Node 服务与 Cloudflare Workers 里复用。
+   */
+  decryptKey?: (enc: string) => Promise<string> | string;
 }
 
 const DOWNGRADE: Record<ThinkingLevel, ThinkingLevel> = {
@@ -103,7 +108,7 @@ export async function decide(opts: DecideOptions): Promise<DecisionOutput> {
     return decideLocal(input);
   }
 
-  const apiKey = profile.api_key_enc ? decryptKey(profile.api_key_enc) : "";
+  const apiKey = profile.api_key_enc ? await safeDecrypt(profile.api_key_enc, opts.decryptKey) : "";
   if (!apiKey) {
     return decideLocal(input);
   }
@@ -131,9 +136,10 @@ export async function decide(opts: DecideOptions): Promise<DecisionOutput> {
   return { ...fallback, reason: `兜底（${lastError.slice(0, 80)}）` };
 }
 
-function decryptKey(hex: string): string {
+async function safeDecrypt(hex: string, fn?: DecideOptions["decryptKey"]): Promise<string> {
+  if (!fn) return "";
   try {
-    return decryptSecret(hex);
+    return (await fn(hex)) ?? "";
   } catch {
     return "";
   }

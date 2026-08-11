@@ -2,10 +2,38 @@ import type { AiProfilePublic, CreateGameResult, GameEvent, GameListItem, GameRe
 
 /** 后端地址：运行时优先读 localStorage（便于 GitHub Pages 指向自托管后端），回退到构建期 VITE_API_BASE */
 const STORAGE_KEY = "aww_api_base";
+
+/**
+ * 判断保存下来的后端地址是否已经不可能可用，需要丢弃并回落到同源。
+ * 背景：早期演示要求用户把「Cloudflare 临时隧道地址」或「localhost」填进设置里。
+ * 隧道地址每次重启都会变、关机即失效；而现在后端已随站点部署在同源 /api 上。
+ * 如果不清掉这些陈旧值，老用户打开站点只会看到「无法连接后端」，还得自己去设置里删——属于我们该兜住的坑。
+ */
+function isStaleBase(base: string): boolean {
+  try {
+    const saved = new URL(base, window.location.href);
+    const here = window.location.hostname;
+    const localHere = here === "localhost" || here === "127.0.0.1";
+    // 临时隧道域名一律作废
+    if (/\.trycloudflare\.com$/i.test(saved.hostname)) return true;
+    // 线上页面却指向本机后端：必然连不上
+    if (!localHere && (saved.hostname === "localhost" || saved.hostname === "127.0.0.1")) return true;
+    // https 页面指向 http 后端：会被浏览器混合内容策略拦掉
+    if (window.location.protocol === "https:" && saved.protocol === "http:") return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function getApiBase(): string {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved && saved.trim()) return saved.trim().replace(/\/+$/, "");
+    if (saved && saved.trim()) {
+      const clean = saved.trim().replace(/\/+$/, "");
+      if (isStaleBase(clean)) localStorage.removeItem(STORAGE_KEY);
+      else return clean;
+    }
   } catch { /* ignore */ }
   return (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") ?? "";
 }

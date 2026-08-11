@@ -1,0 +1,31 @@
+{
+  // 把「与运行时无关」的核心模块（引擎 / AI 中间层 / 类型）编译成 JS，
+  // 供 Cloudflare Pages Functions 直接 import。
+  // 目的：Workers 侧零代码复制，engine/ai 只有一份真相源。
+  // （Pages Functions 的 esbuild 不会把 "./x.js" 解析到 "./x.ts"，所以必须先产出真实 .js）
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // WebWorker 而非 DOM：这正好是 Cloudflare Workers 的全局面
+    // （fetch / AbortController / setTimeout / ReadableStream 都在其中），
+    // 同时排除掉 document / window 这类 Node 和 Workers 都没有的东西。
+    "lib": ["ES2023", "WebWorker"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    // 故意留空：engine/ai 必须是「运行时无关」的纯逻辑。
+    // 一旦有人在这两个目录里 import 了 node:* 或用了 process/Buffer，
+    // 这里就会编译失败——这是保护 Workers 侧可复用性的静态护栏，不要改成 ["node"]。
+    "types": [],
+    "noEmit": false,
+    "declaration": true,
+    "sourceMap": false,
+    "removeComments": false,
+    "rootDir": "src",
+    "outDir": "lib"
+  },
+  "include": ["src/engine", "src/ai", "src/types.ts"]
+}

@@ -80,7 +80,77 @@ npm run start   # 后端 3001 直接托管前端
 
 ## 无需隧道的部署（生产推荐）
 
-Cloudflare Tunnel 只是「把本机运行的服务临时暴露到公网」的便捷手段，**不是必须的**。后端是一个标准 Node 服务（Express + node:sqlite），用 Docker 部署到任意云厂商/服务器即可获得固定公网地址，前端与后端同容器、同域名，天然无需隧道、无跨域、无需 GitHub Pages 也能跑完整应用。
+Cloudflare Tunnel 只是「把本机运行的服务临时暴露到公网」的便捷手段，**不是必须的**。下面四种方式都能拿到固定公网地址，其中**方式零（Cloudflare Pages Functions + D1）不需要任何服务器、不需要开着电脑**，是当前线上使用的方案。
+
+### 方式零：Cloudflare Pages Functions + D1（Serverless，当前线上方案）
+
+前端和后端跑在同一个 Pages 项目里，一个域名搞定：`https://ai-werewolf.pages.dev`（`/api/*` 走 Functions，其余走静态资源）。
+
+它解决的核心矛盾是：**引擎是长跑的 async 状态机，而 Workers 没有常驻内存**。做法不是把引擎改写成显式状态机（代价大、易与玩法逻辑分叉），而是「**回合快照 + 决策日志重放**」：
+
+| 阶段 | 动作 |
+| --- | --- |
+| 1 | 读 `game_runtime.snapshot`（**回合起点**快照）并 `engine.restore()` |
+| 2 | 重放 `game_journal` 里本回合已记录的决策（纯 CPU，不发网络请求），把引擎推回上次中断处 |
+| 3 | 继续往前跑，最多做 `budget` 次**真实 LLM 决策**，然后抛让出信号 |
+| 4 | 新事件写 `game_events`、新决策写 `game_journal`；**整回合跑完**才推进快照 |
+
+- **谁来驱动**：前端本来就每 2s 轮询一次，这些 GET 接口（`/api/games/:id`、`events-list`、`seats/:token/view`）顺带调用 `stepGame()`。没人看的对局自然停在原地，不烧配额。
+- **节奏映射**：`fast → 4` / `normal → 2` / `slow → 1` 次真实决策每轮询，用「每次推进多少」代替原来的 `sleep`。
+- **重放成本**：只回溯到当前回合起点，CPU 开销 ∝ 回合内决策数（约 20–30），**不随对局长度增长**。
+- **真人玩家**：`humanDecide` 钩子先无条件发 `human_turn` 事件，再依次查决策日志 → `human_inbox` → 超时（`fast 45s / normal 90s / slow 120s`，超时转 AI 托管）→ 否则抛 `PendingHumanSignal` 让出，保持回合起点快照不变。提交的行动按 `(round, idx)` 存收件箱，天然幂等。
+- **互斥**：`game_runtime.lock_until`（30s 乐观锁），同一时刻只有一个请求真正推进，多标签页/SSE+轮询并发都安全。
+
+> ⚠️ 改引擎时必须遵守的不变式：**所有 `emit` 必须在每一次重放里无条件发生，只有「日志消费」才允许分支**。否则 `seq` 会错位、事件流撕裂。`npm run test:driver` 就是专门守这条不变式的。
+
+代码位置与验证：
+
+```
+worker/env.ts        # Env 绑定 + 精简 D1 类型（不引 @cloudflare/workers-types 全量依赖）
+worker/schema.ts     # D1 建表（幂等，每 isolate 一次）
+worker/webcrypto.ts  # Web Crypto AES-256-GCM，密文格式与 Node 版逐字节兼容
+worker/driver.ts     # 无状态驱动核心：stepGame / advance / buildEngine / finalizeGame
+worker/games.ts      # 建局 / 开局 / 状态 / 事件 / 战报 / 真人座位
+worker/profiles.ts   # AI 档案 / 预设 / provider
+worker/turnstile.ts  # Turnstile 服务端校验（与 server/src/turnstile.ts 同逻辑）
+functions/api/[[route]].ts  # Pages Functions 入口：原生 Request/Response 手写路由（零依赖）
+server/lib/          # engine/ai/types 的编译产物，Node 服务与 Workers 共用同一份真相源
+```
+
+```bash
+npm run build:lib          # 把 engine/ai/types 编译到 server/lib（Workers 侧 import 真实 .js）
+npm run typecheck:functions # 类型检查 functions/ + worker/
+npm run test:driver        # 用 node:sqlite 模拟 D1，本机跑完整对局，逐条断言 seq 连续/无重复/无回退
+BUDGET=1 npm run test:driver # 把重放次数拉到最大再压一遍
+```
+
+`server/tsconfig.lib.json` 里有两处**故意的**设置，别"顺手修好"：
+
+- `"types": []` —— 不引 `@types/node`。这样 `engine/` 和 `ai/` 里一旦出现 `node:*` / `process` / `Buffer`，编译就会当场失败。这是保护 Workers 侧可复用性的静态护栏，也让 `build:lib` 不再依赖 `server/node_modules`。
+- `"lib": ["ES2023", "WebWorker"]` —— `WebWorker` 恰好等于 Workers 的全局面（`fetch` / `AbortController` / `setTimeout` / `ReadableStream` 都在其中），同时排除 `document` / `window` 这类两端都没有的东西。用 `DOM` 会放进不存在的 API，用纯 `ES2023` 则连 `fetch` 都找不到。
+
+`npm run build:lib` 走的是 `scripts/build-lib.mjs` 而不是直接调 `tsc`，因为 Pages 构建容器可能带着 `NODE_ENV=production` 执行 `npm install`，从而跳过 devDependencies 里的 typescript。该脚本会区分两类失败：**找不到 tsc** → 警告并回落到仓库中已提交的 `server/lib`；**tsc 报类型错误** → 硬失败让部署红掉（带着旧引擎产物静默上线，比构建失败难查得多）。
+
+云端资源（已配置好，无需重复操作）：
+
+- D1 数据库 `ai-werewolf`，绑定变量名 `DB`（production 与 preview 都绑同一个库）
+- Pages 环境变量：`AWW_MASTER_KEY`（密钥加密主密钥，secret）、`TURNSTILE_SECRET`（secret）、`TURNSTILE_HOSTNAMES`
+- 可选 `AWW_STEP_BUDGET`：覆盖单次推进的真实决策数上限（调试用）
+- 部署方式：推 `main` 分支即由 Pages 自动构建（`npm run build` → 根 `dist`），Functions 由 Pages 内置 esbuild 打包
+
+> **注意**：不要在仓库根加 `wrangler.toml`。Pages 的 Git 集成一旦发现它，就会**忽略控制台里配置的绑定与环境变量**，D1 与密钥会全部丢失。绑定用 `scripts/cf-bind-pages.mjs` 或控制台维护。
+
+#### 本地构建注意
+
+`web` 的 build 脚本用 `tsc -p tsconfig.json --noEmit` 而非 `tsc -b`：该 tsconfig 本身就是 `noEmit`，build 模式唯一的产物是 `tsconfig.tsbuildinfo`，而部分 Windows 环境（沙箱 / 杀软 / 编辑器占用）会对这个文件报 `TS5033 EPERM`，白白卡住构建。类型检查效果完全一致——真正的转译由 Vite 的 esbuild 完成，`tsc` 只负责把关类型。
+
+同理，若本地 `vite build` 在清空 `dist` 时报删除超时（某些环境会把 `fs.rmSync` 劫持到"回收站"实现），先把旧目录改名让路即可，不用改 vite 配置：
+
+```bash
+mv dist ".dist-stale-$(date +%s)" && npm --prefix web run build
+```
+
+`.dist-stale-*/` 已在 `.gitignore` 里，确认构建无误后手动删掉即可。CI 上是全新检出、`dist` 并不存在，不会触发这条路径。
 
 ### 方式一：Docker 容器（前端+后端同镜像，单域名）
 
