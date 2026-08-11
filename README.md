@@ -75,6 +75,29 @@ npm run start   # 后端 3001 直接托管前端
 1. 代码推送到 `main`。
 2. GitHub Actions 自动执行 `.github/workflows/pages.yml`：安装 web 依赖 → 构建 `web/dist` → 部署到 GitHub Pages。
 3. 手动重新部署：仓库 Actions → Deploy to GitHub Pages → Run workflow。
+
+## Cloudflare Tunnel 部署（公网访问完整应用）
+
+Cloudflare Tunnel 可以把「本机运行的后端 + 前端」整体暴露到公网，得到可公开访问的完整应用（AI 库、对局、SSE 观战全部可用）。
+
+```bash
+# 1. 先启动本机应用（生产模式，端口 3001）
+npm run start
+# 或开发模式 npm run dev
+
+# 2. 另开一个终端启动隧道
+npm run tunnel
+```
+
+`npm run tunnel` 会：
+1. 弹一次 UAC 授权（需要管理员权限临时把 DNS 切到 223.5.5.5，因为本机 DNS 对 Cloudflare 的 SRV 记录解析异常）；
+2. 用 cloudflared 建立 quick tunnel 并打印公网地址（形如 `https://xxx.trycloudflare.com`，同时写入 `%TEMP%\cfd-tunnel-url.txt`）；
+3. 隧道运行期间保持窗口打开；**关闭该窗口即停止隧道并自动恢复原 DNS**。
+
+> 说明：quick tunnel 无需 Cloudflare 账号，但地址随机、重启会变、无 uptime 保证，适合演示与临时使用。
+> 若想获得固定域名（如 `ai.example.com`），需要你有 Cloudflare 账号与域名，可用命名隧道：
+> `cloudflared tunnel login` → `cloudflared tunnel create ai-werewolf` → `cloudflared tunnel route dns ai-werewolf <你的域名>` →
+> 再用 `cloudflared tunnel run --dns-resolver-addrs 223.5.5.5:53 ai-werewolf`（该参数可避免 DNS 问题，无需改系统 DNS）。
 ## 测试
 
 ```bash

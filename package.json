@@ -12,6 +12,7 @@
     "start": "npm --prefix server run start",
     "test": "npm --prefix server run test",
     "test:e2e": "node scripts/e2e-smoke.mjs",
+    "tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tunnel.ps1",
     "test:web": "npm --prefix web run test"
   },
   "devDependencies": {
