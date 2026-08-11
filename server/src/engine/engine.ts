@@ -67,8 +67,34 @@ export interface EngineOpts {
   decide: (input: DecisionInput) => Promise<DecisionOutput>;
   validate: (action: string, out: DecisionOutput) => string | null;
   onTokens: (playerId: number, usage: { thinkingTokens?: number; outputTokens?: number; totalTokens?: number }) => void;
-  speedMs?: number;
+  pace?: PaceProfile;
   validateRoles?: boolean;
+}
+
+export type PaceKey = "slow" | "normal" | "fast";
+
+export interface PaceProfile {
+  night: number; // 夜间每个角色行动前的思考停顿（毫秒）
+  speech: number; // 白天每人发言前的停顿
+  vote: number; // 每个玩家投票前的停顿
+  lastwords: number; // 遗言停顿
+  hunter: number; // 猎人开枪停顿
+  phaseGap: number; // 阶段切换之间的间隔
+}
+
+// 节奏档位：slow 贴近真人玩狼人杀的节奏，normal 适中，fast 快进
+export const PACES: Record<PaceKey, PaceProfile> = {
+  slow: { night: 4000, speech: 9000, vote: 2500, lastwords: 4500, hunter: 4000, phaseGap: 3500 },
+  normal: { night: 2500, speech: 6000, vote: 1800, lastwords: 3000, hunter: 2500, phaseGap: 2200 },
+  fast: { night: 1400, speech: 3000, vote: 1000, lastwords: 1800, hunter: 1500, phaseGap: 1200 },
+};
+
+export function resolvePace(input: PaceKey | number | undefined): PaceProfile {
+  if (typeof input === "number") {
+    // 旧版 flat speedMs：所有阶段统一使用该间隔
+    return { night: input, speech: input, vote: input, lastwords: input, hunter: input, phaseGap: input };
+  }
+  return PACES[input ?? "slow"] ?? PACES.slow;
 }
 
 export class WerewolfGame {
@@ -235,24 +261,28 @@ export class WerewolfGame {
     }
   }
 
-  private async tick() {
+  private async tick(category: keyof PaceProfile) {
     await this.waitIfPaused();
-    if (this.opts.speedMs) await sleep(this.opts.speedMs);
+    const ms = this.opts.pace?.[category];
+    if (ms) await sleep(ms);
   }
 
   /** 执行一轮（夜间 + 白天），返回是否终局 */
   private async playRound(): Promise<boolean> {
     this.phase = "night_wolf";
     this.emit("phase", { phase: "night_wolf", label: `第 ${this.round} 夜 · 狼人行动` });
+    await this.tick("phaseGap");
     await this.nightWolf();
     if (this.checkGameOver()) return true;
 
     this.phase = "night_seer";
     this.emit("phase", { phase: "night_seer", label: `第 ${this.round} 夜 · 预言家查验` });
+    await this.tick("phaseGap");
     await this.nightSeer();
 
     this.phase = "night_witch";
     this.emit("phase", { phase: "night_witch", label: `第 ${this.round} 夜 · 女巫行动` });
+    await this.tick("phaseGap");
     await this.nightWitch();
 
     // 结算夜间死亡
@@ -262,27 +292,32 @@ export class WerewolfGame {
     // 白天
     this.phase = "day_announce";
     this.emit("phase", { phase: "day_announce", label: `第 ${this.round} 天 · 公布死讯` });
+    await this.tick("phaseGap");
     await this.announceNight();
 
     // 遗言（夜间死者 + 猎人开枪）
     if (this.pendingLastWords !== undefined || this.pendingHunter) {
       this.phase = "day_lastwords";
       this.emit("phase", { phase: "day_lastwords", label: "遗言 · 猎人结算" });
+      await this.tick("phaseGap");
       await this.processLastWordsAndHunter();
       if (this.checkGameOver()) return true;
     }
 
     this.phase = "day_speech";
     this.emit("phase", { phase: "day_speech", label: `第 ${this.round} 天 · 自由发言` });
+    await this.tick("phaseGap");
     await this.daySpeech();
 
     this.phase = "day_vote";
     this.emit("phase", { phase: "day_vote", label: `第 ${this.round} 天 · 投票` });
+    await this.tick("phaseGap");
     await this.dayVote();
     if (this.checkGameOver()) return true;
 
     this.phase = "day_result";
     this.emit("phase", { phase: "day_result", label: "投票结果" });
+    await this.tick("phaseGap");
     await this.dayResult();
     if (this.checkGameOver()) return true;
 
@@ -295,7 +330,7 @@ export class WerewolfGame {
     const wolves = this.alive("werewolf");
     const choices: { id: number; target: number | null }[] = [];
     for (const w of wolves) {
-      await this.tick();
+      await this.tick("night");
       const out = await this.decideFor(w, "night_kill", "狼人刀人");
       const err = this.validateOut("kill", out);
       let target: number | null = null;
@@ -331,7 +366,7 @@ export class WerewolfGame {
   private async nightSeer() {
     const seer = this.alive("seer")[0];
     if (!seer) return;
-    await this.tick();
+    await this.tick("night");
     const out = await this.decideFor(seer, "night_check", "预言家查验");
     const err = this.validateOut("check", out);
     let target: number | null = null;
@@ -353,7 +388,7 @@ export class WerewolfGame {
     if (!witch) return;
     // 解药
     if (witch.witchAntidote && this.nightKillTarget !== undefined) {
-      await this.tick();
+      await this.tick("night");
       const out = await this.decideFor(witch, "night_save", "女巫救人");
       const err = this.validateOut("save", out);
       let target: number | null = null;
@@ -372,7 +407,7 @@ export class WerewolfGame {
     }
     // 毒药
     if (witch.witchPoison) {
-      await this.tick();
+      await this.tick("night");
       const out = await this.decideFor(witch, "night_poison", "女巫下毒");
       const err = this.validateOut("poison", out);
       let target: number | null = null;
@@ -432,14 +467,14 @@ export class WerewolfGame {
   private async processLastWordsAndHunter() {
     if (this.pendingLastWords !== undefined) {
       const p = this.byId(this.pendingLastWords);
-      await this.tick();
+      await this.tick("lastwords");
       const out = await this.decideFor(p, "last_words", "遗言");
       const content = typeof out.content === "string" && out.content.trim() ? out.content.trim() : "（没有遗言）";
       this.emit("last_words", { playerId: p.id, content });
     }
     if (this.pendingHunter) {
       const h = this.byId(this.pendingHunter.id);
-      await this.tick();
+      await this.tick("hunter");
       const out = await this.decideFor(h, "hunter_shot", "猎人开枪");
       const err = this.validateOut("shoot", out);
       let target: number | null = null;
@@ -464,7 +499,7 @@ export class WerewolfGame {
   private async daySpeech() {
     const speakers = [...this.alive()].sort((a, b) => a.seat - b.seat);
     for (const p of speakers) {
-      await this.tick();
+      await this.tick("speech");
       const out = await this.decideFor(p, "day_speech", "发言");
       const content = typeof out.content === "string" && out.content.trim() ? out.content.trim().slice(0, 300) : "（沉默）";
       p.speechCount += 1;
@@ -477,7 +512,7 @@ export class WerewolfGame {
     const voters = this.alive().filter((p) => p.canVote);
     this.votes.clear();
     for (const v of voters) {
-      await this.tick();
+      await this.tick("vote");
       const out = await this.decideFor(v, "day_vote", "投票");
       const err = this.validateOut("vote", out);
       let target: number | null = null;

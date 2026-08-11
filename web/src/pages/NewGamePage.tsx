@@ -19,6 +19,12 @@ const ASSIGN_OPTIONS: { id: RoleAssignment; label: string; hint: string }[] = [
   { id: "preference", label: "按偏好分配", hint: "优先满足每个 AI 的角色偏好" },
 ];
 
+const PACE_OPTIONS: { id: "slow" | "normal" | "fast"; label: string; hint: string }[] = [
+  { id: "slow", label: "真人节奏", hint: "贴近真人玩狼人杀，发言/投票从容，最适合观战" },
+  { id: "normal", label: "适中", hint: "节奏均衡，整局约几分钟" },
+  { id: "fast", label: "快进", hint: "快速推进，适合快速看结果" },
+];
+
 export default function NewGamePage({ go }: { go: (hash: string) => void }) {
   const [profiles, setProfiles] = useState<AiProfilePublic[]>([]);
   const offline = useOffline();
@@ -26,6 +32,7 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [mode, setMode] = useState<"auto" | GameMode>("auto");
   const [assignment, setAssignment] = useState<RoleAssignment>("random");
+  const [pace, setPace] = useState<"slow" | "normal" | "fast">("slow");
   const [override, setOverride] = useState<string>("");
   const [presetName, setPresetName] = useState("");
   const [error, setError] = useState("");
@@ -68,7 +75,7 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
         assignment,
         overrides: overrides(),
       });
-      await api.startGame(id, 450);
+      await api.startGame(id, pace);
       go(`#/games/${id}`);
     } catch (e: any) {
       setError(e.message);
@@ -148,6 +155,14 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
               <select value={assignment} onChange={(e) => setAssignment(e.target.value as RoleAssignment)}>
                 {ASSIGN_OPTIONS.map((a) => (
                   <option key={a.id} value={a.id}>{a.label}（{a.hint}）</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>对局节奏</span>
+              <select value={pace} onChange={(e) => setPace(e.target.value as "slow" | "normal" | "fast")}>
+                {PACE_OPTIONS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}（{p.hint}）</option>
                 ))}
               </select>
             </label>

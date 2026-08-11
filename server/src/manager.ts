@@ -15,7 +15,7 @@ import {
   ThinkingLevel,
 } from "./types.js";
 import { compositionFor, ROLE_COMPLEXITY, ROLE_TEAM } from "./engine/roles.js";
-import { WerewolfGame, EnginePlayer, resolveMode } from "./engine/engine.js";
+import { WerewolfGame, EnginePlayer, resolveMode, PaceKey, PaceProfile, resolvePace } from "./engine/engine.js";
 import { decryptSecret } from "./crypto.js";
 import { decide, AiProfileRuntime } from "./ai/middleware.js";
 
@@ -24,7 +24,7 @@ interface RunningGame {
   engine: WerewolfGame;
   events: GameEvent[];
   emitter: EventEmitter;
-  speedMs: number;
+  pace: PaceProfile;
 }
 
 const running = new Map<number, RunningGame>();
@@ -173,7 +173,8 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 // ---------- 启动对局 ----------
-export async function startGame(db: Db, gameId: number, speedMs = 450): Promise<void> {
+export async function startGame(db: Db, gameId: number, pace: PaceKey | number = "slow"): Promise<void> {
+  const paceProfile = resolvePace(pace);
   if (running.has(gameId)) return;
   const session: any = db.prepare("SELECT * FROM game_sessions WHERE id = ?").get(gameId);
   if (!session) throw new Error("对局不存在");
@@ -230,7 +231,7 @@ export async function startGame(db: Db, gameId: number, speedMs = 450): Promise<
     mode: session.mode as GameMode,
     assignment: session.assignment,
     emit: sink,
-    speedMs,
+    pace: paceProfile,
     decide: async (input: DecisionInput): Promise<DecisionOutput> => {
       const p = players.find((x) => x.id === input.player.id)!;
       const profile = runtime(p);
@@ -251,7 +252,7 @@ export async function startGame(db: Db, gameId: number, speedMs = 450): Promise<
     },
   });
 
-  const rg: RunningGame = { gameId, engine, events, emitter, speedMs };
+  const rg: RunningGame = { gameId, engine, events, emitter, pace: paceProfile };
   running.set(gameId, rg);
 
   db.prepare("UPDATE game_sessions SET status='running', started_at=datetime('now','localtime') WHERE id=?").run(gameId);

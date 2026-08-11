@@ -36,7 +36,7 @@ export const api = {
   listGamesByProfile: (profileId: number) => request<GameListItem[]>(`/api/games?profile_id=${profileId}`),
   createGame: (body: Record<string, unknown>) => request<{ id: number }>("/api/games", { method: "POST", body: JSON.stringify(body) }),
   getGame: (id: number) => request<GameState>(`/api/games/${id}`),
-  startGame: (id: number, speedMs = 450) => request<{ ok: boolean }>(`/api/games/${id}/start`, { method: "POST", body: JSON.stringify({ speed_ms: speedMs }) }),
+  startGame: (id: number, pace: "slow" | "normal" | "fast" = "slow") => request<{ ok: boolean }>(`/api/games/${id}/start`, { method: "POST", body: JSON.stringify({ pace }) }),
   controlGame: (id: number, action: "pause" | "resume" | "abort") => request<{ ok: boolean }>(`/api/games/${id}/${action}`, { method: "POST" }),
   getReport: (id: number) => request<GameReport>(`/api/games/${id}/report`),
   // 轮询增量事件（SSE 被隧道缓冲时仍保持时间线实时）

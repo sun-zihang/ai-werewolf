@@ -10,6 +10,7 @@ import {
   controlGame,
   getReport,
 } from "../manager.js";
+import { PaceKey } from "../engine/engine.js";
 
 export function gamesRouter(db: Db): Router {
   const r = Router();
@@ -64,7 +65,8 @@ export function gamesRouter(db: Db): Router {
 
   r.post("/:id/start", async (req, res) => {
     try {
-      await startGame(db, Number(req.params.id), req.body?.speed_ms ?? 450);
+      const paceInput = (req.body?.pace as PaceKey | undefined) ?? (typeof req.body?.speed_ms === "number" ? req.body.speed_ms : "slow");
+      await startGame(db, Number(req.params.id), paceInput);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
