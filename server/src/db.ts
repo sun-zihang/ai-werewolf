@@ -83,6 +83,19 @@ function migrate(db: DatabaseSync) {
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
   );
   `);
+
+  // 人类玩家座位（1~4 个真人）：在 AI 座位之外预留人类席位
+  for (const sql of [
+    "ALTER TABLE game_ai_mapping ADD COLUMN is_human INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE game_ai_mapping ADD COLUMN human_token TEXT",
+    "ALTER TABLE game_ai_mapping ADD COLUMN human_name TEXT",
+  ]) {
+    try {
+      db.exec(sql);
+    } catch (e: any) {
+      if (!/duplicate column/i.test(e?.message ?? "")) throw e;
+    }
+  }
 }
 
 export type Db = DatabaseSync;

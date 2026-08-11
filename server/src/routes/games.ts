@@ -9,6 +9,9 @@ import {
   subscribe,
   controlGame,
   getReport,
+  joinHumanSeat,
+  getHumanView,
+  submitHumanAction,
 } from "../manager.js";
 import { PaceKey } from "../engine/engine.js";
 
@@ -48,8 +51,8 @@ export function gamesRouter(db: Db): Router {
   r.post("/", (req, res) => {
     try {
       const config = req.body as GameConfigInput;
-      const id = createGame(db, config);
-      res.status(201).json({ id });
+      const result = createGame(db, config);
+      res.status(201).json(result);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -135,6 +138,32 @@ export function gamesRouter(db: Db): Router {
       clearInterval(heartbeat);
       unsubscribe();
     });
+  });
+
+  // 真人玩家：占座 / 玩家视角 / 提交行动
+  r.post("/:id/seats/:token/join", (req, res) => {
+    try {
+      const { name } = req.body ?? {};
+      res.json(joinHumanSeat(db, Number(req.params.id), req.params.token, name));
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  r.get("/:id/seats/:token/view", (req, res) => {
+    try {
+      res.json(getHumanView(db, Number(req.params.id), req.params.token));
+    } catch (e: any) {
+      res.status(404).json({ error: e.message });
+    }
+  });
+
+  r.post("/:id/seats/:token/action", (req, res) => {
+    try {
+      res.json(submitHumanAction(db, Number(req.params.id), req.params.token, req.body ?? {}));
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
   });
 
   return r;

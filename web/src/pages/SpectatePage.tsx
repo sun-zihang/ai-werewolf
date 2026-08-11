@@ -262,6 +262,16 @@ function TimelineItem({ evt, god, nameOf, last }: { evt: GameEvent; god: boolean
       if (st === "fallback") return <div className={cls}><span className="t-seq">#{evt.seq}</span><span className="t-body err">{nm(evt.playerId as number)} 已降级兜底</span></div>;
       return <div className={cls}><span className="t-seq">#{evt.seq}</span><span className="t-body faint">{nm(evt.playerId as number)} 决策完成（{evt.ms as number}ms）</span></div>;
     }
+    case "human_turn": {
+      const a = evt.action as string;
+      const actLabel = a === "night_kill" ? "狼人刀人" : a === "night_check" ? "预言家查验" : a === "night_save" ? "女巫救人" : a === "night_poison" ? "女巫下毒" : a === "day_vote" ? "投票" : a === "hunter_shot" ? "猎人开枪" : a === "day_speech" ? "发言" : a === "last_words" ? "遗言" : a;
+      return (
+        <div className={cls + " human-turn"}>
+          <span className="t-seq">#{evt.seq}</span>
+          <span className="t-body human-turn-text">等待 {nm(evt.playerId as number)}（真人）操作：{actLabel}…</span>
+        </div>
+      );
+    }
     case "speech":
       return (
         <div className={cls}>

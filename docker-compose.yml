@@ -1,0 +1,14 @@
+services:
+  ai-werewolf:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - AWW_DATA_DIR=/data
+    volumes:
+      - awdata:/data
+    restart: unless-stopped
+
+volumes:
+  awdata:

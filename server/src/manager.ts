@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { randomBytes } from "node:crypto";
 import { Db } from "./db.js";
 import {
   AiProfilePublic,
@@ -74,30 +75,48 @@ function safeJson(s: string, fallback: any): any {
 
 // ---------- 创建对局 ----------
 export function createGame(db: Db, input: GameConfigInput): number {
+  const humanCount = Math.min(4, Math.max(0, Math.floor(input.human_count ?? 0)));
   const ids = [...new Set(input.ai_ids)];
-  if (ids.length < 2 || ids.length > 12) throw new Error("AI 数量需在 2-12 之间");
+  const total = ids.length + humanCount;
+  if (total < 2 || total > 12) throw new Error("总人数（含真人）需在 2-12 之间");
   const profiles = ids.map((id) => {
     const row = getProfileRow(db, id);
     if (!row) throw new Error(`AI 档案 ${id} 不存在`);
     return row;
   });
-  const mode = resolveMode(ids.length, input.mode);
-  const roles = compositionFor(ids.length, mode);
-  const players = assignRoles(profiles, roles, input.assignment, input.overrides ?? {});
+  const assignment = input.assignment ?? "random";
+  const mode = resolveMode(total, input.mode);
+  const roles = compositionFor(total, mode);
+  // 真人与 AI 一起参与角色随机分配（真人角色随机，开局后才知道）
+  const sources: any[] = [
+    ...profiles.map((p) => ({ ...p, isHuman: false })),
+    ...Array.from({ length: humanCount }, () => ({
+      id: 0,
+      name: null,
+      thinking_level: "medium",
+      avatar_style: "ink",
+      role_preference: "[]",
+      isHuman: true,
+    })),
+  ];
+  const players = assignRoles(sources, roles, assignment, input.overrides ?? {});
 
-  const config = JSON.stringify({ ...input, mode, resolvedRoles: players.map((p) => p.role) });
+  const config = JSON.stringify({ ...input, human_count: humanCount, mode, resolvedRoles: players.map((p) => p.role) });
   const info = db
     .prepare("INSERT INTO game_sessions (config_json, status, mode, assignment) VALUES (?, 'created', ?, ?)")
-    .run(config, mode, input.assignment);
+    .run(config, mode, assignment);
   const gameId = Number(info.lastInsertRowid);
 
   const ins = db.prepare(
-    "INSERT INTO game_ai_mapping (game_id, profile_id, seat, role, team, alive, thinking_level) VALUES (?, ?, ?, ?, ?, 1, ?)"
+    "INSERT INTO game_ai_mapping (game_id, profile_id, seat, role, team, alive, thinking_level, is_human, human_token, human_name) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)"
   );
+  const humanInvites: { seat: number; token: string }[] = [];
   for (const p of players) {
-    ins.run(gameId, p.profileId, p.seat, p.role, ROLE_TEAM[p.role], p.thinkingLevel);
+    const token = p.isHuman ? randomBytes(8).toString("hex") : null;
+    if (token) humanInvites.push({ seat: p.seat, token });
+    ins.run(gameId, p.profileId, p.seat, p.role, ROLE_TEAM[p.role], p.thinkingLevel, p.isHuman ? 1 : 0, token, null);
   }
-  return gameId;
+  return { id: gameId, humanInvites };
 }
 
 function assignRoles(
@@ -109,14 +128,14 @@ function assignRoles(
   const seatOrder = profiles.map((p, i) => ({ p, seat: i + 1 }));
   const build = (p: any, seat: number, role: Role): EnginePlayer => ({
     id: seat,
-    profileId: p.id,
-    name: p.name,
+    profileId: p.isHuman ? 0 : p.id,
+    name: p.isHuman ? `真人${seat}` : p.name,
     seat,
     role,
     team: ROLE_TEAM[role],
     alive: true,
-    thinkingLevel: overrides[String(p.id)] ?? p.thinking_level ?? "medium",
-    avatarStyle: p.avatar_style ?? "ink",
+    thinkingLevel: p.isHuman ? "medium" : (overrides[String(p.id)] ?? p.thinking_level ?? "medium"),
+    avatarStyle: p.isHuman ? "ink" : (p.avatar_style ?? "ink"),
     canVote: true,
     idiotFlipped: false,
     witchAntidote: role === "witch",
@@ -124,6 +143,7 @@ function assignRoles(
     speechCount: 0,
     tokensUsed: 0,
     votesReceived: 0,
+    isHuman: !!p.isHuman,
   });
 
   const roleList = [...roles];
@@ -175,6 +195,8 @@ function shuffle<T>(arr: T[]): T[] {
 // ---------- 启动对局 ----------
 export async function startGame(db: Db, gameId: number, pace: PaceKey | number = "slow"): Promise<void> {
   const paceProfile = resolvePace(pace);
+  // 真人操作超时：真人节奏给 2 分钟，适中 90s，快进 45s
+  const humanTimeoutMs = paceProfile.night >= 4000 ? 120000 : paceProfile.night >= 2500 ? 90000 : 45000;
   if (running.has(gameId)) return;
   const session: any = db.prepare("SELECT * FROM game_sessions WHERE id = ?").get(gameId);
   if (!session) throw new Error("对局不存在");
@@ -184,11 +206,11 @@ export async function startGame(db: Db, gameId: number, pace: PaceKey | number =
     .prepare("SELECT * FROM game_ai_mapping WHERE game_id = ? ORDER BY seat")
     .all(gameId);
   const players: EnginePlayer[] = mappings.map((m) => {
-    const profile = getProfileRow(db, m.profile_id);
+    const profile = m.is_human ? null : getProfileRow(db, m.profile_id);
     return {
       id: m.seat,
       profileId: m.profile_id,
-      name: profile?.name ?? `玩家${m.seat}`,
+      name: m.human_name ?? (m.is_human ? `真人${m.seat}` : profile?.name ?? `玩家${m.seat}`),
       seat: m.seat,
       role: m.role,
       team: m.team,
@@ -202,6 +224,7 @@ export async function startGame(db: Db, gameId: number, pace: PaceKey | number =
       speechCount: 0,
       tokensUsed: 0,
       votesReceived: 0,
+      isHuman: !!m.is_human,
     };
   });
 
@@ -232,6 +255,7 @@ export async function startGame(db: Db, gameId: number, pace: PaceKey | number =
     assignment: session.assignment,
     emit: sink,
     pace: paceProfile,
+    humanTimeoutMs,
     decide: async (input: DecisionInput): Promise<DecisionOutput> => {
       const p = players.find((x) => x.id === input.player.id)!;
       const profile = runtime(p);
@@ -318,17 +342,19 @@ export function getGameState(db: Db, gameId: number): any {
   const engine = rg?.engine;
 
   const players: PlayerView[] = mappings.map((m) => {
-    const profile = getProfileRow(db, m.profile_id);
+    const ep = engine?.byId(m.seat);
     return {
       id: m.seat,
-      profileId: m.profile_id,
-      name: profile?.name ?? `玩家${m.seat}`,
+      profileId: m.is_human ? null : m.profile_id,
+      name: m.human_name ?? (m.is_human ? `真人${m.seat}` : (getProfileRow(db, m.profile_id)?.name ?? `玩家${m.seat}`)),
       seat: m.seat,
       role: m.role,
       team: m.team,
-      alive: engine ? engine.byId(m.seat).alive : !!m.alive,
-      thinkingLevel: engine ? engine.byId(m.seat).thinkingLevel : m.thinking_level ?? profile?.thinking_level ?? "medium",
-      avatarStyle: profile?.avatar_style ?? "ink",
+      alive: ep ? ep.alive : !!m.alive,
+      thinkingLevel: ep ? ep.thinkingLevel : (m.thinking_level ?? "medium"),
+      avatarStyle: ep ? ep.avatarStyle : "ink",
+      isHuman: !!m.is_human,
+      humanName: m.human_name ?? null,
     };
   });
 
@@ -402,5 +428,102 @@ export function getReport(db: Db, gameId: number): GameReport {
   };
 }
 
+
+// ---------- 真人座位：占座 / 视图 / 行动 ----------
+function humanSeats(db: Db, gameId: number): { seat: number; name: string | null; joined: boolean }[] {
+  const rows: any[] = db.prepare("SELECT seat, human_name FROM game_ai_mapping WHERE game_id=? AND is_human=1 ORDER BY seat").all(gameId);
+  return rows.map((r) => ({ seat: r.seat, name: r.human_name ?? null, joined: !!r.human_name }));
+}
+
+export function joinHumanSeat(db: Db, gameId: number, token: string, name: string): { seat: number } {
+  const m: any = db.prepare("SELECT * FROM game_ai_mapping WHERE game_id=? AND human_token=?").get(gameId, token);
+  if (!m) throw new Error("座位不存在或链接无效");
+  const clean = (name ?? "").toString().trim().slice(0, 12) || `真人${m.seat}`;
+  db.prepare("UPDATE game_ai_mapping SET human_name=? WHERE id=?").run(clean, m.id);
+  return { seat: m.seat };
+}
+
+// 该角色在玩家视角下能否看到这条事件（上帝视角的私密事件需按角色过滤）
+function visibleToHuman(e: GameEvent, p: EnginePlayer): boolean {
+  if (!e.secret) return true;
+  if (e.type === "night_action") {
+    if (e.role === "werewolf" && p.role === "werewolf") return true; // 狼人可见狼刀
+    if ((e.playerId as number) === p.id) return true; // 自己的行动结果
+    return false;
+  }
+  return false;
+}
+
+export function getHumanView(db: Db, gameId: number, token: string): any {
+  const m: any = db.prepare("SELECT * FROM game_ai_mapping WHERE game_id=? AND human_token=?").get(gameId, token);
+  if (!m) throw new Error("座位不存在或链接无效");
+  const humans = humanSeats(db, gameId);
+  const base = {
+    gameId,
+    seat: m.seat,
+    isHuman: true as const,
+    joined: !!m.human_name,
+    myName: m.human_name ?? null,
+    humans,
+    privateInfo: [] as string[],
+    yourTurn: false,
+    requiredAction: undefined as string | undefined,
+    options: [] as { id: number; name: string; seat: number }[],
+    timeline: [] as GameEvent[],
+  };
+  const rg = running.get(gameId);
+  if (!rg) {
+    const session: any = db.prepare("SELECT * FROM game_sessions WHERE id=?").get(gameId);
+    if (!session) throw new Error("对局不存在");
+    return { ...base, status: session.status, round: 0, phase: "pending", role: undefined };
+  }
+  const engine = rg.engine;
+  const p = engine.byId(m.seat);
+  const myTurn = engine.pendingHumanSeat === m.seat;
+  const requiredAction = myTurn ? engine.pendingHumanAction : undefined;
+  const needsTarget = !!requiredAction && ["night_kill", "night_check", "night_poison", "day_vote", "hunter_shot", "night_save"].includes(requiredAction);
+  let options: { id: number; name: string; seat: number }[] = [];
+  if (myTurn && needsTarget) {
+    if (requiredAction === "night_save") {
+      const k = engine.nightKillTarget;
+      options = k !== undefined ? [{ id: k, name: engine.byId(k).name, seat: engine.byId(k).seat }] : [];
+    } else {
+      options = engine.alive().filter((x) => x.id !== p.id).map((x) => ({ id: x.id, name: x.name, seat: x.seat }));
+    }
+  }
+  const timeline = (getGameEvents(db, gameId, 0) as GameEvent[])
+    .filter((e) => visibleToHuman(e, p))
+    .map((e) => (e.secret ? { ...e, secret: false } : e));
+  return {
+    ...base,
+    status: engine.status,
+    round: engine.round,
+    phase: engine.phase,
+    role: engine.status === "created" ? undefined : p.role,
+    privateInfo: engine.status === "created" ? [] : engine.privateInfoFor(p),
+    yourTurn: myTurn,
+    requiredAction,
+    options,
+    timeline,
+    winner: engine.winner ?? null,
+    reason: engine.reason ?? null,
+  };
+}
+
+export function submitHumanAction(db: Db, gameId: number, token: string, body: any): { ok: boolean } {
+  const rg = running.get(gameId);
+  if (!rg) throw new Error("对局未在进行中");
+  const engine = rg.engine;
+  const m: any = db.prepare("SELECT * FROM game_ai_mapping WHERE game_id=? AND human_token=?").get(gameId, token);
+  if (!m) throw new Error("座位不存在或链接无效");
+  if (engine.pendingHumanSeat !== m.seat) throw new Error("当前不是你的操作回合");
+  const out: DecisionOutput = {
+    action: engine.pendingHumanAction ?? "",
+    target_id: body?.target_id ?? null,
+    content: body?.content ?? undefined,
+  };
+  engine.resolveHuman(out);
+  return { ok: true };
+}
 
 export { ROLE_LABEL };

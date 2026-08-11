@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { isOffline, useOffline } from "../offline";
 import OfflineCard from "../components/OfflineCard";
-import { AiProfilePublic, GameMode, LEVEL_LABEL, Preset, RoleAssignment } from "../types";
+import { AiProfilePublic, CreateGameResult, GameMode, LEVEL_LABEL, Preset, RoleAssignment } from "../types";
 import Avatar from "../components/Avatar";
 import LevelTag from "../components/LevelTag";
 
@@ -35,6 +35,8 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
   const [pace, setPace] = useState<"slow" | "normal" | "fast">("slow");
   const [override, setOverride] = useState<string>("");
   const [presetName, setPresetName] = useState("");
+  const [humanCount, setHumanCount] = useState(0);
+  const [created, setCreated] = useState<CreateGameResult | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -44,8 +46,9 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
   }, []);
 
   const n = selected.size;
+  const total = n + humanCount;
   const modeOpt = MODE_OPTIONS.find((m) => m.id === mode)!;
-  const modeError = modeOpt.range && (n < modeOpt.range[0] || n > modeOpt.range[1]);
+  const modeError = modeOpt.range && (total < modeOpt.range[0] || total > modeOpt.range[1]);
 
   const sorted = useMemo(() => [...profiles].sort((a, b) => b.id - a.id), [profiles]);
 
@@ -64,19 +67,38 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
   }
 
   async function start() {
-    if (n < 2) return setError("请至少选择 2 个 AI");
-    if (modeError) return setError(`该模式需要 ${modeOpt.range![0]}-${modeOpt.range![1]} 人，当前 ${n} 人`);
+    if (total < 2) return setError("请至少选择 2 名玩家（AI + 真人）");
+    if (modeError) return setError(`该模式需要 ${modeOpt.range![0]}-${modeOpt.range![1]} 人，当前 ${total} 人`);
     setBusy(true);
     setError("");
     try {
-      const { id } = await api.createGame({
+      const res = await api.createGame({
         ai_ids: [...selected],
+        human_count: humanCount,
         mode,
         assignment,
         overrides: overrides(),
       });
-      await api.startGame(id, pace);
-      go(`#/games/${id}`);
+      if (humanCount > 0) {
+        // 含真人：先发邀请链接，等真人加入后再开始
+        setCreated(res);
+        setBusy(false);
+      } else {
+        await api.startGame(res.id, pace);
+        go(`#/games/${res.id}`);
+      }
+    } catch (e: any) {
+      setError(e.message);
+      setBusy(false);
+    }
+  }
+
+  async function beginGame() {
+    if (!created) return;
+    setBusy(true);
+    try {
+      await api.startGame(created.id, pace);
+      go(`#/games/${created.id}`);
     } catch (e: any) {
       setError(e.message);
       setBusy(false);
@@ -104,12 +126,48 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
     if (cfg.override) setOverride(cfg.override);
   }
 
+  if (created) {
+    return (
+      <div>
+        <div className="page-head">
+          <div>
+            <h1>等待真人加入</h1>
+            <div className="sub">对局 #{created.id} 已创建 · 把链接发给真人玩家，多设备打开即可上桌</div>
+          </div>
+        </div>
+        <div className="card room-card">
+          <div className="section-title">真人加入链接</div>
+          <div className="invite-list">
+            {created.humanInvites?.map((inv) => {
+              const link = `${location.origin}/#/play/${created.id}/${inv.token}`;
+              return (
+                <div className="invite-row" key={inv.seat}>
+                  <span className="invite-seat">座位 {inv.seat}</span>
+                  <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
+                  <button className="ghost" onClick={() => navigator.clipboard?.writeText(link)}>复制</button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="small muted" style={{ margin: "8px 0" }}>
+            真人在各自设备打开链接、输入昵称占座；座位占满后即可开始。开局后真人角色随机，上桌才知道自己是狼还是好人。
+          </div>
+          {error && <div className="err small">{error}</div>}
+          <div className="actions" style={{ marginTop: 8 }}>
+            <button className="primary" onClick={beginGame} disabled={busy}>开始对局</button>
+            <button className="ghost" onClick={() => setCreated(null)} disabled={busy}>返回修改</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-head">
         <div>
           <h1>新建对局</h1>
-          <div className="sub">选择参与对局的 AI，配置模式与角色分配方式</div>
+          <div className="sub">选择参与对局的 AI，配置模式与角色分配方式{/* 也可加入真人玩家 */}</div>
         </div>
       </div>
 
@@ -163,6 +221,14 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
               <select value={pace} onChange={(e) => setPace(e.target.value as "slow" | "normal" | "fast")}>
                 {PACE_OPTIONS.map((p) => (
                   <option key={p.id} value={p.id}>{p.label}（{p.hint}）</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>真人玩家数量（0-4）</span>
+              <select value={humanCount} onChange={(e) => setHumanCount(Number(e.target.value))}>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <option key={i} value={i}>{i} 人{i === 0 ? "（纯 AI 对局）" : ""}</option>
                 ))}
               </select>
             </label>

@@ -246,4 +246,65 @@ label.check input { width: auto; }
 .conn-dot.error::before { background: var(--accent); }
 .god-badge { cursor: default; }
 
+/* ---------- 真人模式：房主邀请面板 ---------- */
+.room-card { max-width: 720px; margin: 8px auto 0; }
+.invite-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.invite-row { display: flex; align-items: center; gap: 8px; }
+.invite-seat {
+  flex: none; width: 64px; font-size: 13px; color: var(--ink-soft);
+  font-family: var(--serif); font-weight: 600;
+}
+.invite-row input {
+  flex: 1; font-size: 12px; color: var(--ink-faint);
+  background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px;
+}
+.invite-row .ghost { flex: none; }
+
+/* ---------- 真人模式：玩家视角 ---------- */
+.play-join { display: flex; justify-content: center; padding-top: 48px; }
+.join-card { width: 100%; max-width: 420px; }
+.play-page { max-width: 920px; margin: 0 auto; }
+.play-head {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  padding: 6px 2px 16px; flex-wrap: wrap;
+}
+.play-seat { font-family: var(--serif); font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.role-badge {
+  display: inline-block; font-size: 13px; padding: 4px 12px; border-radius: 999px; font-weight: 600;
+  border: 1px solid transparent;
+}
+.role-badge.wolf { color: #9c2b2b; background: #f3dada; border-color: #e3b6b6; }
+.role-badge.good { color: #2b6b3a; background: #d8ecdd; border-color: #b6d8bf; }
+.role-badge.pending { color: var(--ink-soft); background: var(--paper-mid); border-color: var(--line); }
+.play-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.result-card { margin-bottom: 14px; text-align: center; }
+.result-card.win { background: var(--good-soft); border-color: #b6d8bf; }
+.result-card.lose { background: var(--accent-soft); border-color: #e0b9ad; }
+.result-title { font-family: var(--serif); font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+
+.my-turn { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.turn-banner {
+  font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 12px;
+}
+.turn-body { display: flex; flex-direction: column; gap: 10px; }
+.turn-body select, .turn-body textarea { width: 100%; }
+.turn-body .actions { display: flex; gap: 10px; }
+
+.play-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 16px; margin-top: 16px; }
+.private-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.private-list li { font-size: 13px; color: var(--ink); line-height: 1.5; }
+.timeline {
+  max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  padding-right: 4px;
+}
+.tl-item { display: flex; gap: 8px; font-size: 13px; line-height: 1.45; align-items: baseline; }
+.tl-round { flex: none; color: var(--ink-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tl-text { color: var(--ink); }
+.tl-item.death .tl-text { color: #9c2b2b; }
+.tl-item.game_over .tl-text { font-weight: 700; }
+.tl-item.human_turn .tl-text { color: var(--accent); font-style: italic; }
+.timeline-item.human-turn .human-turn-text { color: var(--accent); font-style: italic; }
+.timeline-item.human-turn { background: var(--accent-soft); border-radius: 8px; padding: 4px 8px; }
+
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }

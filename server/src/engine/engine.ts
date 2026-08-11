@@ -27,6 +27,7 @@ export interface EnginePlayer {
   speechCount: number;
   tokensUsed: number;
   votesReceived: number;
+  isHuman: boolean; // 是否为真人座位（等待真人 HTTP 提交行动）
 }
 
 export type PhaseId =
@@ -68,6 +69,7 @@ export interface EngineOpts {
   validate: (action: string, out: DecisionOutput) => string | null;
   onTokens: (playerId: number, usage: { thinkingTokens?: number; outputTokens?: number; totalTokens?: number }) => void;
   pace?: PaceProfile;
+  humanTimeoutMs?: number; // 真人操作超时（毫秒），超时则由 AI 自动托管
   validateRoles?: boolean;
 }
 
@@ -124,6 +126,14 @@ export class WerewolfGame {
   private pausedFlag = false;
   private abortedFlag = false;
   private stopRequested = false;
+  private pendingHuman?:
+    | {
+        playerId: number;
+        requiredAction: DecisionInput["requiredAction"];
+        phaseLabel: string;
+        resolve: (out: DecisionOutput) => void;
+        timer: ReturnType<typeof setTimeout>;
+      };
 
   constructor(opts: EngineOpts) {
     this.opts = opts;
@@ -161,6 +171,7 @@ export class WerewolfGame {
   }
 
   private async decideFor(player: EnginePlayer, requiredAction: DecisionInput["requiredAction"], phaseLabel: string): Promise<DecisionOutput> {
+    if (player.isHuman) return this.waitHumanInput(player, requiredAction, phaseLabel);
     const input: DecisionInput = {
       player: { id: player.id, name: player.name, seat: player.seat, role: player.role, team: player.team, alive: player.alive },
       thinkingLevel: player.thinkingLevel,
@@ -179,6 +190,87 @@ export class WerewolfGame {
     const ms = Date.now() - t0;
     this.emit("ai_thinking", { playerId: player.id, status: "done", level: player.thinkingLevel, ms });
     return out;
+  }
+
+  // 真人座位：挂起等待真人通过 HTTP 提交行动；超时则由 AI 自动托管，保证对局不卡死
+  private waitHumanInput(player: EnginePlayer, requiredAction: DecisionInput["requiredAction"], phaseLabel: string): Promise<DecisionOutput> {
+    return new Promise((resolve) => {
+      const timeout = this.opts.humanTimeoutMs ?? 90000;
+      const timer = setTimeout(() => {
+        if (this.pendingHuman?.playerId === player.id) {
+          this.pendingHuman = undefined;
+          this.emit("system", { message: `${player.name}（真人）超时未操作，已由 AI 自动托管`, secret: false });
+          resolve(this.autoDecision(player, requiredAction, phaseLabel));
+        }
+      }, timeout);
+      this.pendingHuman = {
+        playerId: player.id,
+        requiredAction,
+        phaseLabel,
+        resolve: (out) => {
+          clearTimeout(timer);
+          if (this.pendingHuman?.playerId === player.id) this.pendingHuman = undefined;
+          resolve(out);
+        },
+        timer,
+      };
+      this.emit("human_turn", { playerId: player.id, seat: player.seat, action: requiredAction, label: phaseLabel });
+    });
+  }
+
+  get pendingHumanSeat(): number | undefined {
+    return this.pendingHuman?.playerId;
+  }
+
+  get pendingHumanAction(): DecisionInput["requiredAction"] | undefined {
+    return this.pendingHuman?.requiredAction;
+  }
+
+  /** 真人提交行动后由 manager 调用，唤醒挂起的等待 */
+  resolveHuman(out: DecisionOutput): boolean {
+    if (!this.pendingHuman) return false;
+    const ph = this.pendingHuman;
+    this.pendingHuman = undefined;
+    clearTimeout(ph.timer);
+    ph.resolve(out);
+    return true;
+  }
+
+  /** 真人超时的默认合法决策（不调用 LLM，仅保证对局推进） */
+  private autoDecision(player: EnginePlayer, requiredAction: DecisionInput["requiredAction"], _phaseLabel: string): DecisionOutput {
+    const aliveOthers = this.alive().filter((p) => p.id !== player.id);
+    switch (requiredAction) {
+      case "night_kill": {
+        const targets = aliveOthers.filter((p) => p.team !== "wolf");
+        const t = targets[Math.floor(Math.random() * targets.length)];
+        return t ? { action: "night_kill", target_id: t.id } : { action: "night_kill" };
+      }
+      case "night_check": {
+        const checked = new Set(this.seerCheckResults.keys());
+        const targets = aliveOthers.filter((p) => !checked.has(p.id));
+        const t = targets[Math.floor(Math.random() * targets.length)];
+        return t ? { action: "night_check", target_id: t.id } : { action: "night_check" };
+      }
+      case "night_save":
+        return this.nightKillTarget !== undefined ? { action: "night_save", target_id: this.nightKillTarget } : { action: "night_save" };
+      case "night_poison":
+        return { action: "night_poison" };
+      case "day_speech":
+        return { action: "day_speech", content: "（真人超时，由 AI 自动托管）我是好人，请大家相信我。" };
+      case "day_vote": {
+        const targets = aliveOthers.filter((p) => p.canVote);
+        const t = targets[Math.floor(Math.random() * targets.length)];
+        return t ? { action: "day_vote", target_id: t.id } : { action: "day_vote" };
+      }
+      case "last_words":
+        return { action: "last_words", content: "（真人超时，由 AI 自动托管）" };
+      case "hunter_shot": {
+        const t = aliveOthers[Math.floor(Math.random() * aliveOthers.length)];
+        return t ? { action: "hunter_shot", target_id: t.id } : { action: "hunter_shot" };
+      }
+      default:
+        return { action: requiredAction };
+    }
   }
 
   private publicLogLines(): string[] {
@@ -253,6 +345,12 @@ export class WerewolfGame {
   abort() {
     this.abortedFlag = true;
     if (this.status !== "finished") this.status = "aborted";
+    if (this.pendingHuman) {
+      clearTimeout(this.pendingHuman.timer);
+      const ph = this.pendingHuman;
+      this.pendingHuman = undefined;
+      ph.resolve({ action: "abort_skip" });
+    }
   }
 
   private async waitIfPaused() {

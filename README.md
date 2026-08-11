@@ -1,4 +1,4 @@
-# AI 狼人杀网页版（全 AI 自动对局 · 观战版）
+# AI 狼人杀网页版（全 AI 自动对局 · 支持 1–4 名真人加入 · 观战版）
 
 在本地运行的 AI 狼人杀：从 AI 库挑选 2–12 个 AI（可来自 12 家主流大模型厂商，也可用内置本地规则引擎），自动分配狼人/村民/预言家/女巫/猎人/白痴身份，AI 全程自主发言、行动、投票，你在旁边实时观战并查看结算报告。
 
@@ -47,7 +47,8 @@ npm run start   # 后端 3001 直接托管前端
 
 - **AI 库**：卡片式管理，支持新建 / 编辑 / 复制 / 删除 / 测连 / JSON 与 CSV 批量导入导出 / 按名称·厂商·强度筛选 / 查看详情与历史对局。
 - **新建对局**：多选 AI，自动或手动定档，随机 / 强度匹配 / 按偏好分配角色，支持全局思考强度覆盖与预设阵容保存。
-- **观战**：实时座位盘 + 事件时间线（SSE 推送），上帝视角可看所有身份与夜间行动；对局结束显示结算报告（胜方、MVP、发言数、token 用量）。
+- **观战**：实时座位盘 + 事件时间线（SSE 推送，隧道下自动切换轮询兜底），上帝视角可看所有身份与夜间行动；对局结束显示结算报告（胜方、MVP、发言数、token 用量）。
+- **真人模式**：新建对局时可选「真人玩家数量 0–4」。真人角色随机分配（开局后才知道阵营），房主生成邀请链接发给朋友，多设备打开即可上桌；轮到真人时引擎挂起等待，真人提交刀人/查验/救人/下毒/发言/投票/遗言，超时自动托管不卡局。
 - **历史**：全部对局记录，点击可回放事件时间线。
 
 ## 规则约定（标准变体）
@@ -76,9 +77,56 @@ npm run start   # 后端 3001 直接托管前端
 2. GitHub Actions 自动执行 `.github/workflows/pages.yml`：安装 web 依赖 → 构建 `web/dist` → 部署到 GitHub Pages。
 3. 手动重新部署：仓库 Actions → Deploy to GitHub Pages → Run workflow。
 
-## Cloudflare Tunnel 部署（公网访问完整应用）
+## 无需隧道的部署（生产推荐）
 
-Cloudflare Tunnel 可以把「本机运行的后端 + 前端」整体暴露到公网，得到可公开访问的完整应用（AI 库、对局、SSE 观战全部可用）。
+Cloudflare Tunnel 只是「把本机运行的服务临时暴露到公网」的便捷手段，**不是必须的**。后端是一个标准 Node 服务（Express + node:sqlite），用 Docker 部署到任意云厂商/服务器即可获得固定公网地址，前端与后端同容器、同域名，天然无需隧道、无跨域、无需 GitHub Pages 也能跑完整应用。
+
+### 方式一：Docker 容器（前端+后端同镜像，单域名）
+
+仓库已提供 `Dockerfile` / `docker-compose.yml`，镜像内后端会直接托管构建好的前端（`web/dist`），一个域名搞定全部：
+
+```bash
+# 构建并启动（端口 3001，数据持久化到名为 awdata 的卷）
+docker compose up -d --build
+# 打开 http://<你的服务器IP或域名>:3001
+```
+
+- 数据落在容器内的 `/data`（compose 已挂卷 `awdata`），升级镜像不丢库。
+- 云厂商（腾讯云轻量、阿里云、Railway、Fly.io 等）选「容器服务」上传此 Dockerfile 即可，记得把 `3001` 端口对外暴露，并设置环境变量 `AWW_DATA_DIR=/data`、挂载可写持久卷。
+
+### 方式二：腾讯云 CloudBase 云托管（云开发容器，推荐给国内用户）
+
+你已有 CloudBase 使用经验，云托管是长期稳定的「免隧道」方案：
+
+```bash
+# 1. 安装云开发 CLI 并登录
+npm i -g @cloudbase/cli && tcb login
+
+# 2. 在 cloudbaserc.json 填入你的 envId 后一键部署
+tcb framework deploy
+```
+
+- `cloudbaserc.json` 已预置 `@cloudbase/framework-plugin-container` 配置，读 `Dockerfile`，环境变量 `AWW_DATA_DIR=/data`。
+- 也可不走 CLI：CloudBase 控制台 → 云托管 → 新建服务 →「使用 Dockerfile 部署」，上传本仓库即可，平台会分配 `*.ap-shanghai.run.tcloudbase.com` 公网域名。
+- 部署后该域名即为完整应用地址，真人邀请链接、AI 库、对局全部可用，无需 Cloudflare Tunnel。
+
+### 方式三：前后端分离（前端留 GitHub Pages）
+
+若坚持前端用 GitHub Pages、后端独立部署：
+
+```bash
+# 构建前端时把 API 指向你的容器域名
+VITE_API_BASE=https://你的容器域名 npm run build
+git push   # 触发 Pages 重新部署
+```
+
+后端按「方式一/二」部署，`VITE_API_BASE` 指向它即可（服务端已开启 CORS）。
+
+> 小结：**生产环境用 Docker / CloudBase 云托管部署后端，根本不需要任何隧道**；Cloudflare Tunnel 仅用于「本机快速公网演示」。
+
+## Cloudflare Tunnel 部署（本机公网演示用）
+
+Cloudflare Tunnel 可以把「本机运行的后端 + 前端」整体暴露到公网，得到可公开访问的完整应用（AI 库、对局、SSE 观战全部可用）。**这是本地演示的便捷手段，生产请用上面的 Docker / CloudBase 云托管方案。**
 
 ```bash
 # 1. 先启动本机应用（生产模式，端口 3001）

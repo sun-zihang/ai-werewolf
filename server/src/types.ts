@@ -65,6 +65,7 @@ export interface GameConfigInput {
   mode: "auto" | GameMode;
   assignment: RoleAssignment;
   overrides?: Record<string, ThinkingLevel>; // profileId -> level
+  human_count?: number; // 真人玩家数量 0-4，与 AI 同场对局
 }
 
 export interface PlayerView {
@@ -77,6 +78,8 @@ export interface PlayerView {
   alive: boolean;
   thinkingLevel: ThinkingLevel;
   avatarStyle: string;
+  isHuman?: boolean; // 是否为真人座位
+  humanName?: string | null; // 真人占座后的昵称
 }
 
 // ---------- 事件 ----------
@@ -101,6 +104,7 @@ export type GameEvent =
   | (BaseEvent & { type: "idiot_flip"; playerId: number })
   | (BaseEvent & { type: "hunter_shot"; playerId: number; targetId?: number; content?: string })
   | (BaseEvent & { type: "last_words"; playerId: number; content: string })
+  | (BaseEvent & { type: "human_turn"; playerId: number; seat: number; action: string; label: string })
   | (BaseEvent & { type: "game_over"; winner: Team; reason: string });
 
 // ---------- AI 决策 ----------

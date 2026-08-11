@@ -125,3 +125,35 @@ export interface Preset {
   config: Record<string, unknown>;
   created_at: string;
 }
+
+/** 真人占座邀请（房主创建对局后下发，用于生成加入链接） */
+export interface HumanInvite {
+  seat: number;
+  token: string;
+}
+
+export interface CreateGameResult {
+  id: number;
+  humanInvites?: HumanInvite[];
+}
+
+/** 真人玩家视角（自己的私密信息 + 当前可操作项 + 公共时间线） */
+export interface HumanView {
+  gameId: number;
+  seat: number;
+  isHuman: boolean;
+  joined: boolean;
+  myName: string | null;
+  humans: { seat: number; name: string | null }[];
+  status: GameStatus;
+  round: number;
+  phase: string;
+  role?: Role;
+  privateInfo: string[];
+  yourTurn: boolean;
+  requiredAction?: string;
+  options: { id: number; name: string; seat: number }[];
+  timeline: GameEvent[];
+  winner?: Team | null;
+  reason?: string | null;
+}

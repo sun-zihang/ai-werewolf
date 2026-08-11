@@ -1,4 +1,4 @@
-import type { AiProfilePublic, GameEvent, GameListItem, GameReport, GameState, Preset, ProviderMeta } from "./types";
+import type { AiProfilePublic, CreateGameResult, GameEvent, GameListItem, GameReport, GameState, HumanView, Preset, ProviderMeta } from "./types";
 
 /** 后端地址：构建时可用 VITE_API_BASE 覆盖（如部署在 GitHub Pages 时指向你本机后端） */
 export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") ?? "";
@@ -34,13 +34,17 @@ export const api = {
   // 对局
   listGames: () => request<GameListItem[]>("/api/games"),
   listGamesByProfile: (profileId: number) => request<GameListItem[]>(`/api/games?profile_id=${profileId}`),
-  createGame: (body: Record<string, unknown>) => request<{ id: number }>("/api/games", { method: "POST", body: JSON.stringify(body) }),
+  createGame: (body: Record<string, unknown>) => request<CreateGameResult>("/api/games", { method: "POST", body: JSON.stringify(body) }),
   getGame: (id: number) => request<GameState>(`/api/games/${id}`),
   startGame: (id: number, pace: "slow" | "normal" | "fast" = "slow") => request<{ ok: boolean }>(`/api/games/${id}/start`, { method: "POST", body: JSON.stringify({ pace }) }),
   controlGame: (id: number, action: "pause" | "resume" | "abort") => request<{ ok: boolean }>(`/api/games/${id}/${action}`, { method: "POST" }),
   getReport: (id: number) => request<GameReport>(`/api/games/${id}/report`),
   // 轮询增量事件（SSE 被隧道缓冲时仍保持时间线实时）
   getEvents: (id: number, after = 0) => request<GameEvent[]>(`/api/games/${id}/events-list?after=${after}`),
+  // 真人模式
+  getHumanView: (gameId: number, token: string) => request<HumanView>(`/api/games/${gameId}/seats/${token}/view`),
+  joinHumanSeat: (gameId: number, token: string, name: string) => request<{ ok: boolean }>(`/api/games/${gameId}/seats/${token}/join`, { method: "POST", body: JSON.stringify({ name }) }),
+  submitHumanAction: (gameId: number, token: string, body: Record<string, unknown>) => request<{ ok: boolean }>(`/api/games/${gameId}/seats/${token}/action`, { method: "POST", body: JSON.stringify(body) }),
   // 预设阵容
   listPresets: () => request<Preset[]>("/api/presets"),
   savePreset: (body: { name: string; ai_ids: number[]; config: Record<string, unknown> }) => request<{ id: number }>("/api/presets", { method: "POST", body: JSON.stringify(body) }),
