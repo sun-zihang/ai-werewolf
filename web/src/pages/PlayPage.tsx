@@ -194,12 +194,19 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
             </div>
           ) : isTarget ? (
             <div className="turn-body">
-              <select value={target} onChange={(e) => setTarget(e.target.value === "" ? "" : Number(e.target.value))}>
-                <option value="">{view.requiredAction === "night_save" ? "是否救人…" : "选择目标…"}</option>
+              <div className="target-chips">
                 {view.options.map((o) => (
-                  <option key={o.id} value={o.id}>{o.name}（座位 {o.seat}）</option>
+                  <button
+                    type="button"
+                    key={o.id}
+                    className={`target-chip ${target === o.id ? "selected" : ""}`}
+                    onClick={() => setTarget(o.id)}
+                  >
+                    <span className="tc-name">{o.name}</span>
+                    <span className="tc-seat">座位 {o.seat}</span>
+                  </button>
                 ))}
-              </select>
+              </div>
               <div className="actions">
                 <button
                   className="primary"
