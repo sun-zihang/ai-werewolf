@@ -27,26 +27,33 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
   const [god, setGod] = useState(true);
   const [error, setError] = useState("");
   const [thinking, setThinking] = useState<Set<number>>(new Set());
+  const [conn, setConn] = useState<"connecting" | "open" | "error">("connecting");
+  const [copied, setCopied] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setEvents([]);
     setReport(null);
     setError("");
+    setConn("connecting");
     api.getGame(gameId).then(setState).catch((e) => { if (!isOffline()) setError(e.message); });
-    const off = subscribeEvents(gameId, (evt) => {
-      setEvents((prev) => (prev.length && prev[prev.length - 1].seq >= evt.seq ? prev : [...prev, evt]));
-      if (evt.type === "ai_thinking") {
-        const pid = evt.playerId as number;
-        const st = evt.status as string;
-        setThinking((t) => {
-          const next = new Set(t);
-          if (st === "start") next.add(pid);
-          else next.delete(pid);
-          return next;
-        });
-      }
-    });
+    const off = subscribeEvents(
+      gameId,
+      (evt) => {
+        setEvents((prev) => (prev.length && prev[prev.length - 1].seq >= evt.seq ? prev : [...prev, evt]));
+        if (evt.type === "ai_thinking") {
+          const pid = evt.playerId as number;
+          const st = evt.status as string;
+          setThinking((t) => {
+            const next = new Set(t);
+            if (st === "start") next.add(pid);
+            else next.delete(pid);
+            return next;
+          });
+        }
+      },
+      setConn
+    );
     // 轮询状态（游戏结束后 SSE 仍开着，但状态需要刷新）
     const iv = setInterval(() => {
       api.getGame(gameId).then((s) => {
@@ -88,6 +95,22 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
     }
   }
 
+  async function copySpectateLink() {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* ignore */ }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+
   if (offline) return <OfflineCard />;
   if (error) return <div className="err">{error}</div>;
   if (!state) return <div className="empty"><span className="spin" /> 加载中…</div>;
@@ -109,6 +132,13 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
           <input type="checkbox" checked={god} onChange={(e) => setGod(e.target.checked)} />
           上帝视角
         </label>
+        {god && <span className="tag accent god-badge" title="上帝视角开启：可见全部身份与夜间行动">全知</span>}
+        <span className={`conn-dot ${conn}`} title={conn === "open" ? "实时连接正常" : conn === "connecting" ? "正在连接…" : "连接中断，正在自动重连"}>
+          {conn === "open" ? "实时" : conn === "connecting" ? "连接中" : "重连中"}
+        </span>
+        <button className="ghost" onClick={copySpectateLink}>
+          {copied ? "链接已复制 ✓" : "复制观战链接"}
+        </button>
         {running && (
           <>
             <button onClick={() => control(state.status === "paused" ? "resume" : "pause")}>

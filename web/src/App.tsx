@@ -5,18 +5,21 @@ import LibraryPage from "./pages/LibraryPage";
 import NewGamePage from "./pages/NewGamePage";
 import SpectatePage from "./pages/SpectatePage";
 import HistoryPage from "./pages/HistoryPage";
+import LivePage from "./pages/LivePage";
 
 type Route =
   | { page: "library" }
   | { page: "new" }
   | { page: "game"; id: number }
-  | { page: "history" };
+  | { page: "history" }
+  | { page: "live" };
 
 function parseHash(): Route {
   const h = window.location.hash.replace(/^#\/?/, "");
   const parts = h.split("/").filter(Boolean);
   if (parts[0] === "games" && parts[1]) return { page: "game", id: Number(parts[1]) };
   if (parts[0] === "new") return { page: "new" };
+  if (parts[0] === "live") return { page: "live" };
   if (parts[0] === "history") return { page: "history" };
   return { page: "library" };
 }
@@ -61,6 +64,7 @@ export default function App() {
         <nav className="nav">
           <a className={route.page === "library" ? "active" : ""} href="#/">AI 库</a>
           <a className={route.page === "new" ? "active" : ""} href="#/new">新建对局</a>
+          <a className={route.page === "live" ? "active" : ""} href="#/live">实时观战</a>
           <a className={route.page === "history" ? "active" : ""} href="#/history">历史</a>
         </nav>
         <span className="hint">全 AI 自动对局 · 本地运行</span>
@@ -68,6 +72,7 @@ export default function App() {
       <main className="page">
         {route.page === "library" && <LibraryPage go={go} />}
         {route.page === "new" && <NewGamePage go={go} />}
+        {route.page === "live" && <LivePage go={go} />}
         {route.page === "game" && <SpectatePage gameId={route.id} />}
         {route.page === "history" && <HistoryPage go={go} />}
       </main>

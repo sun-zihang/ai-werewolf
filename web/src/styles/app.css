@@ -208,3 +208,42 @@ label.check input { width: auto; }
   .page { padding: 20px 18px 48px; }
   .form-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- 实时观战（直播大厅） ---------- */
+.live-pill {
+  display: inline-block; margin-left: 12px; vertical-align: middle;
+  font-family: var(--sans); font-size: 12px; font-weight: 500;
+  color: #fff; background: var(--good); border-radius: 999px; padding: 3px 11px;
+}
+.live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.live-card { display: flex; flex-direction: column; gap: 12px; }
+.live-card-head { display: flex; align-items: center; gap: 10px; }
+.live-card-head .mono { font-size: 13px; color: var(--ink-faint); }
+.live-card-meta { display: flex; flex-direction: column; gap: 4px; }
+.live-card-meta b { font-family: var(--serif); font-size: 15px; font-weight: 600; }
+.live-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.live-dot.on { background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); animation: pulse 1.6s ease-in-out infinite; }
+.live-dot.paused { background: #c79a3e; box-shadow: 0 0 0 3px #f3e8cf; }
+.live-empty { text-align: center; padding: 56px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.live-empty-title { font-family: var(--serif); font-size: 17px; }
+.live-empty .muted { max-width: 360px; }
+.live-empty .controls { margin-top: 8px; }
+
+/* ---------- 观战连接状态 / 上帝视角徽标 ---------- */
+.conn-dot {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-size: 12px; color: var(--ink-soft);
+  border: 1px solid var(--line-strong); border-radius: 999px; padding: 4px 10px;
+  white-space: nowrap;
+}
+.conn-dot::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); flex: none;
+}
+.conn-dot.open { color: var(--good); border-color: #bdd6c8; background: var(--good-soft); }
+.conn-dot.open::before { background: var(--good); }
+.conn-dot.connecting::before { background: #c79a3e; animation: pulse 1.2s ease-in-out infinite; }
+.conn-dot.error { color: var(--accent); border-color: #e0b9ad; background: var(--accent-soft); }
+.conn-dot.error::before { background: var(--accent); }
+.god-badge { cursor: default; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }

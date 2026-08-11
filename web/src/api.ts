@@ -45,9 +45,16 @@ export const api = {
   deletePreset: (id: number) => request<{ ok: boolean }>(`/api/presets/${id}`, { method: "DELETE" }),
 };
 
-/** SSE 订阅对局事件；返回取消函数 */
-export function subscribeEvents(gameId: number, onEvent: (e: GameEvent) => void): () => void {
+/** SSE 订阅对局事件；返回取消函数。onStatus 回报连接状态，便于观战者确认是否实时跟进 */
+export function subscribeEvents(
+  gameId: number,
+  onEvent: (e: GameEvent) => void,
+  onStatus?: (status: "connecting" | "open" | "error") => void
+): () => void {
   const es = new EventSource(`${API_BASE}/api/games/${gameId}/events`);
+  onStatus?.("connecting");
+  es.onopen = () => onStatus?.("open");
+  es.onerror = () => onStatus?.("error");
   es.onmessage = (msg) => {
     try {
       onEvent(JSON.parse(msg.data));
