@@ -54,6 +54,9 @@ async function req(method, path, body) {
 const run = async () => {
   console.log(`线上烟测 → ${BASE}`);
 
+  // 本次烟测自己建的档案 id，末尾统一清理；绝不碰线上已有数据
+  const createdProfileIds = [];
+
   // ---------- [1] 路由与运行时 ----------
   stage("1] 路由与运行时");
   const health = await req("GET", "/health");
@@ -74,19 +77,37 @@ const run = async () => {
   );
 
   // ---------- [2] Turnstile 拦截 ----------
-  // 生产已配置 TURNSTILE_SECRET，因此不带 token 的受保护写接口必须被拒。
-  // 这条一旦失效，等于任何人都能刷 AI 档案，是真金白银的风险。
-  stage("2] Turnstile 拦截（受保护写接口不带 token 必须被拒）");
+  // 断言方向取决于该环境是否真的配了密钥（health.turnstile 只是布尔位，不泄漏密钥）：
+  //   配了（生产）→ 不带 token 的受保护写接口必须 403。这条一旦失效，
+  //                 等于任何人都能刷 AI 档案，是真金白银的风险。
+  //   没配（预览/本地）→ guard 按设计放行，此时断言 403 反而是错的。
+  const turnstileOn = health.json?.turnstile === true;
+  stage(`2] Turnstile（该环境 turnstile=${turnstileOn ? "on" : "off"}）`);
+
+  // 注意字段名：接口用 snake_case（provider / thinking_level），不是 camelCase。
+  // 曾经这里写成 providerId，返回的是 400「不支持的厂商」而不是 403——
+  // 参数校验在 guard 之后，写错参数会让这条断言"因为别的原因"通过，白测。
+  const probeName = `烟测-turnstile-probe-${Date.now()}`;
   const noToken = await req("POST", "/ai-profiles", {
-    name: "烟测-应当被拒",
-    providerId: "local",
-    model: "local",
+    name: probeName,
+    provider: "local",
+    model: "local-engine",
   });
-  ok(
-    noToken.status === 403,
-    "POST /api/ai-profiles 无 Turnstile token → 403",
-    `status=${noToken.status} body=${noToken.text.slice(0, 160)}`,
-  );
+  if (turnstileOn) {
+    ok(
+      noToken.status === 403,
+      "无 Turnstile token 的 POST /api/ai-profiles → 403",
+      `status=${noToken.status} body=${noToken.text.slice(0, 160)}`,
+    );
+  } else {
+    ok(
+      noToken.status === 201 || noToken.status === 200,
+      "未配密钥时 guard 按设计放行（预览/本地环境不该挡用户）",
+      `status=${noToken.status} body=${noToken.text.slice(0, 160)}`,
+    );
+    // 放行路径下这次探测真的建了一条档案，登记下来供末尾清理
+    if (noToken.json?.id) createdProfileIds.push(noToken.json.id);
+  }
 
   // ---------- [3] D1 读路径 ----------
   stage("3] D1 读路径（建表 + 查询真的连上了库）");
@@ -109,9 +130,8 @@ const run = async () => {
   // 要真正跑通请打 preview 环境（preview 不配 TURNSTILE_SECRET 时 guard 放行）：
   //   BASE=https://<hash>.ai-werewolf.pages.dev node scripts/live-smoke.mjs
   stage("4] 全 AI 对局（真实 Workers + 真实 D1 跑到终局）");
-  const createdProfileIds = [];
   let localProfiles = (Array.isArray(profiles.json) ? profiles.json : []).filter(
-    (p) => (p.providerId ?? p.provider_id) === "local",
+    (p) => p.provider === "local",
   );
   info(`线上已有 local 档案：${localProfiles.length} 个`);
 
@@ -119,9 +139,9 @@ const run = async () => {
   for (let i = localProfiles.length; i < 6; i++) {
     const r = await req("POST", "/ai-profiles", {
       name: `烟测-local-${Date.now()}-${i}`,
-      providerId: "local",
-      model: "local",
-      thinkingLevel: "low",
+      provider: "local",
+      model: "local-engine",
+      thinking_level: "medium",
     });
     if (r.status === 403) {
       blockedByTurnstile = true;
@@ -131,7 +151,7 @@ const run = async () => {
       const id = r.json?.id;
       if (id) {
         createdProfileIds.push(id);
-        localProfiles.push({ id, providerId: "local" });
+        localProfiles.push({ id, provider: "local" });
       }
     } else {
       ok(false, `创建第 ${i + 1} 个 local 档案`, `status=${r.status} body=${r.text.slice(0, 160)}`);
@@ -147,8 +167,13 @@ const run = async () => {
   } else {
     ok(true, `凑齐 6 个 local 档案（本次新建 ${createdProfileIds.length} 个）`);
 
-    const seats = localProfiles.slice(0, 6).map((p) => ({ profileId: p.id, isHuman: false }));
-    const created = await req("POST", "/games", { pace: "fast", seats });
+    // createGame 的入参是 ai_ids + human_count（不是 seats 数组）
+    const created = await req("POST", "/games", {
+      pace: "fast",
+      ai_ids: localProfiles.slice(0, 6).map((p) => p.id),
+      human_count: 0,
+      assignment: "random",
+    });
     ok(
       (created.status === 200 || created.status === 201) && created.json?.id,
       "POST /api/games 建局成功",
@@ -160,13 +185,25 @@ const run = async () => {
       const started = await req("POST", `/games/${gid}/start`);
       ok(started.status === 200, "POST /api/games/:id/start 开局成功", started.text.slice(0, 200));
 
-      // 模拟前端 2s 轮询：每次 GET 顺带把引擎往前推
-      let lastSeq = -1;
-      let seqOk = true;
-      const seen = new Set();
-      let dupSeq = false;
+      // 模拟前端 2s 轮询：每次 GET 顺带把引擎往前推。
+      //
+      // events-list 每次返回的是**全量**事件，所以不能跨轮询累积比较 seq
+      // （第二轮又从 seq 1 开始，会被误判成「回退 + 重复」）。
+      // 这里分两层校验：
+      //   单快照内：seq 严格递增、无重复、无空洞
+      //   跨快照间：前一次快照必须是后一次的**前缀**
+      // 第二条才是重放架构真正的命门——一旦重放把已落库的事件改写或重写，
+      // 前缀就会破，而单看某一次快照是完全看不出来的。
+      const digest = (e) => `${e.seq}|${e.type}|${JSON.stringify(e.payload ?? e.data ?? null)}`;
+
+      let snapshotOk = true;
+      let snapshotErr = "";
+      let prefixOk = true;
+      let prefixErr = "";
+      let prevDigests = [];
       let finished = false;
       let evCount = 0;
+      let lastSeq = -1;
       let polls = 0;
       let serverError = null;
       const t0 = Date.now();
@@ -180,31 +217,50 @@ const run = async () => {
           break;
         }
         const events = list.json?.events ?? (Array.isArray(list.json) ? list.json : []);
-        if (Array.isArray(events)) {
-          evCount = events.length;
-          for (const e of events) {
-            if (typeof e.seq !== "number") continue;
-            if (e.seq < lastSeq) seqOk = false;
-            if (seen.has(e.seq)) dupSeq = true;
-            seen.add(e.seq);
-            lastSeq = Math.max(lastSeq, e.seq);
+        if (!Array.isArray(events)) continue;
+
+        evCount = events.length;
+
+        // ① 单快照自洽
+        for (let k = 1; k < events.length; k++) {
+          const a = events[k - 1].seq;
+          const b = events[k].seq;
+          if (typeof a !== "number" || typeof b !== "number") continue;
+          if (b <= a) {
+            snapshotOk = false;
+            snapshotErr ||= `轮询 ${polls}：seq ${a} → ${b} 未严格递增`;
+          } else if (b !== a + 1) {
+            snapshotOk = false;
+            snapshotErr ||= `轮询 ${polls}：seq ${a} → ${b} 之间有空洞`;
           }
-          if (events.some((e) => e.type === "game_over")) {
-            finished = true;
+        }
+        if (events.length) lastSeq = events[events.length - 1].seq;
+
+        // ② 跨快照前缀一致
+        const digests = events.map(digest);
+        for (let k = 0; k < prevDigests.length; k++) {
+          if (digests[k] !== prevDigests[k]) {
+            prefixOk = false;
+            prefixErr ||= `轮询 ${polls}：第 ${k} 条事件被改写\n      旧: ${prevDigests[k]?.slice(0, 110)}\n      新: ${digests[k]?.slice(0, 110)}`;
             break;
           }
+        }
+        if (digests.length < prevDigests.length) {
+          prefixOk = false;
+          prefixErr ||= `轮询 ${polls}：事件数从 ${prevDigests.length} 缩到 ${digests.length}（事件被删了）`;
+        }
+        prevDigests = digests;
+
+        if (events.some((e) => e.type === "game_over")) {
+          finished = true;
+          break;
         }
       }
 
       ok(!serverError, "轮询期间没有 5xx（Workers 未因 CPU 超时/异常挂掉）", serverError ?? "");
       ok(evCount > 0, "轮询能拿到事件（stepGame 在真实 Workers 里跑起来了）", `events=${evCount}`);
-      ok(seqOk, "线上事件 seq 单调不回退");
-      ok(!dupSeq, "线上事件 seq 无重复（重放没有把事件写两遍）");
-      ok(
-        seen.size === 0 || seen.size === lastSeq - Math.min(...seen) + 1,
-        "线上事件 seq 连续无空洞",
-        `count=${seen.size} range=${seen.size ? `${Math.min(...seen)}..${lastSeq}` : "-"}`,
-      );
+      ok(snapshotOk, "每次快照内 seq 严格递增、无重复、无空洞", snapshotErr);
+      ok(prefixOk, "前一次快照始终是后一次的前缀（重放没有改写已落库事件）", prefixErr);
       ok(finished, "对局在 60 次轮询内走到终局", `polls=${polls} events=${evCount} lastSeq=${lastSeq}`);
       info(`轮询 ${polls} 次，事件 ${evCount} 条，耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 

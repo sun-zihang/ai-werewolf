@@ -8,7 +8,7 @@
  */
 import type { Env, PagesContext } from "../../worker/env.js";
 import { ensureSchema } from "../../worker/schema.js";
-import { guard } from "../../worker/turnstile.js";
+import { guard, turnstileConfigured } from "../../worker/turnstile.js";
 import { stepGame } from "../../worker/driver.js";
 import {
   createGame,
@@ -145,7 +145,16 @@ export const onRequest = async (ctx: PagesContext): Promise<Response> => {
   try {
     // ---------- health / providers ----------
     if (p.length === 0 || (p.length === 1 && p[0] === "health")) {
-      return json({ ok: true, time: new Date().toISOString(), runtime: "cloudflare-pages", driver: "d1-poll" });
+      return json({
+        ok: true,
+        time: new Date().toISOString(),
+        runtime: "cloudflare-pages",
+        driver: "d1-poll",
+        // 只暴露「是否启用」这个布尔位，不暴露密钥本身。
+        // 前端据此决定要不要渲染 Turnstile 组件（本地/预览环境没配密钥时就别挡用户），
+        // 线上烟测也据此判断「无 token 写接口该 403」这条断言要不要生效。
+        turnstile: turnstileConfigured(env),
+      });
     }
     if (p[0] === "providers" && p.length === 1 && m === "GET") return json(listProviders());
 
