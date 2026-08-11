@@ -25,7 +25,7 @@ npm run dev
 生产模式：
 
 ```bash
-npm run build   # 构建前端到 web/dist
+npm run build   # 构建前端到 dist（仓库根目录）
 npm run start   # 后端 3001 直接托管前端
 # 打开 http://localhost:3001
 ```
@@ -75,7 +75,7 @@ npm run start   # 后端 3001 直接托管前端
 ### 发布流程（已配置好）
 
 1. 代码推送到 `main`。
-2. GitHub Actions 自动执行 `.github/workflows/pages.yml`：安装 web 依赖 → 构建 `web/dist` → 部署到 GitHub Pages。
+2. GitHub Actions 自动执行 `.github/workflows/pages.yml`：安装 web 依赖 → 构建 `dist` → 部署到 GitHub Pages。
 3. 手动重新部署：仓库 Actions → Deploy to GitHub Pages → Run workflow。
 
 ## 无需隧道的部署（生产推荐）
@@ -84,7 +84,7 @@ Cloudflare Tunnel 只是「把本机运行的服务临时暴露到公网」的�
 
 ### 方式一：Docker 容器（前端+后端同镜像，单域名）
 
-仓库已提供 `Dockerfile` / `docker-compose.yml`，镜像内后端会直接托管构建好的前端（`web/dist`），一个域名搞定全部：
+仓库已提供 `Dockerfile` / `docker-compose.yml`，镜像内后端会直接托管构建好的前端（`dist`，即仓库根 dist），一个域名搞定全部：
 
 ```bash
 # 构建并启动（端口 3001，数据持久化到名为 awdata 的卷）

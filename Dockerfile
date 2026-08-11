@@ -19,5 +19,5 @@ ENV NODE_ENV=production
 VOLUME ["/data"]
 EXPOSE 3001
 
-# 后端直接托管前端（server/src/index.ts 已托管 web/dist）
+# 后端直接托管前端（server/src/index.ts 已托管 dist，即仓库根 dist）
 CMD ["npm", "--prefix", "server", "run", "start"]

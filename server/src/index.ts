@@ -25,7 +25,7 @@ app.use("/api/providers", providersRouter());
 app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
 // 生产模式：托管 web 构建产物
-const webDist = path.resolve(here, "../../web/dist");
+const webDist = path.resolve(here, "../../dist");
 if (existsSync(webDist)) {
   app.use(express.static(webDist));
   app.get("*", (_req, res) => res.sendFile(path.join(webDist, "index.html")));

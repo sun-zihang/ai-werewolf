@@ -22,7 +22,7 @@ async function waitFor(fn, timeout = 60000, interval = 500) {
 
 let server = null;
 try {
-  // 启动服务器（生产模式托管 web/dist）
+  // 启动服务器（生产模式托管 dist，即仓库根 dist）
   server = spawn(
     process.platform === "win32"
       ? `npm --prefix "${path.join(root, "server")}" run start`
