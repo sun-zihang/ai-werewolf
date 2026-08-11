@@ -12,6 +12,8 @@
     "start": "npm --prefix server run start",
     "test": "npm --prefix server run test",
     "test:e2e": "node scripts/e2e-smoke.mjs",
+    "test:turnstile": "node scripts/turnstile-validate.mjs",
+    "turnstile:create": "node scripts/turnstile-create.mjs",
     "tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tunnel.ps1",
     "test:web": "npm --prefix web run test"
   },

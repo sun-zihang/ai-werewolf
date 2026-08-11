@@ -14,6 +14,7 @@ import {
   submitHumanAction,
 } from "../manager.js";
 import { PaceKey } from "../engine/engine.js";
+import { turnstileGuard } from "../turnstile.js";
 
 export function gamesRouter(db: Db): Router {
   const r = Router();
@@ -141,7 +142,7 @@ export function gamesRouter(db: Db): Router {
   });
 
   // 真人玩家：占座 / 玩家视角 / 提交行动
-  r.post("/:id/seats/:token/join", (req, res) => {
+  r.post("/:id/seats/:token/join", turnstileGuard({ action: "join_game" }), (req, res) => {
     try {
       const { name } = req.body ?? {};
       res.json(joinHumanSeat(db, Number(req.params.id), req.params.token, name));

@@ -168,3 +168,49 @@ data/     运行时生成（数据库 + 主密钥），已 gitignore
 - API 密钥仅在本机加密存储，后端代理调用，前端永远拿不到明文。
 - 单用户 AI 档案上限 50，单局 AI 上限 12。
 - 删除档案 / 修改密钥前均有二次确认。
+
+## Cloudflare Turnstile 人机验证
+
+在两个「不可信用户提交」入口接入了 Turnstile，防止机器人批量创建 AI 档案 / 冒名加入对局：
+
+- `POST /api/ai-profiles`（创建 AI 档案）→ action `create_profile`
+- `POST /api/games/:id/seats/:token/join`（真人占座加入）→ action `join_game`
+
+核心规则（canonical）：浏览器拿到 `cf-turnstile-response` 令牌 → 前端随请求体发给后端 → 后端调用 Cloudflare `siteverify` 校验 `success===true`、action 匹配、hostname 在白名单；任一不满足即 `403`。**siteverify 仅在后端调用，前端永不直接请求。**
+
+### 1. 创建 widget（需你的 Cloudflare 令牌）
+
+```bash
+CLOUDFLARE_API_TOKEN=xxxx CLOUDFLARE_ACCOUNT_ID=yyyy \
+  node scripts/turnstile-create.mjs --name "ai-werewolf" \
+  --domain ai-werewolf.pages.dev --domain your-domain.com
+```
+
+脚本只打印 sitekey（可公开）与 secret（保密），不写盘。
+
+### 2. 配置密钥
+
+```bash
+# server/.env（服务端，保密）
+TURNSTILE_SECRET=<上一步的 secret>
+TURNSTILE_HOSTNAMES=ai-werewolf.pages.dev,your-domain.com   # 生产不要含 localhost
+
+# web/.env（前端，构建期注入）
+VITE_TURNSTILE_SITEKEY=<上一步的 sitekey>
+```
+
+> 未配置 `TURNSTILE_SECRET` 时后端自动进入**旁路模式**（开发放行，不阻断功能）；生产务必配置，否则等于未防护。
+
+### 3. 本地验证
+
+```bash
+node scripts/turnstile-validate.mjs
+```
+
+启动 mock siteverify + 真实后端，断言：合法令牌放行（201/200）、缺令牌 / 伪造 / action 不符 / hostname 不符均拒绝（403），并实测真实 Cloudflare 端点（官方测试密钥）。
+
+### 代码位置
+
+- `server/src/turnstile.ts` — `verifyTurnstile()` + `turnstileGuard()` 中间件
+- `web/src/components/Turnstile.tsx` — React 封装（自动加载脚本、单令牌重置）
+- `web/src/config.ts` — `TURNSTILE_SITEKEY` / `TURNSTILE_ENABLED`

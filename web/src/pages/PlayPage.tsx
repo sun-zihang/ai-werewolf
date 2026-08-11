@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { isOffline } from "../offline";
 import { HumanView, ROLE_LABEL, TEAM_LABEL } from "../types";
+import { Turnstile, TurnstileHandle } from "../components/Turnstile";
+import { TURNSTILE_SITEKEY, TURNSTILE_ENABLED } from "../config";
 
 const ACTION_LABEL: Record<string, string> = {
   night_kill: "狼人刀人",
@@ -50,6 +52,8 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
+  const [cfToken, setCfToken] = useState<string | null>(null);
 
   async function refresh() {
     try {
@@ -78,9 +82,12 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
 
   async function join() {
     if (!name.trim()) return setError("请输入昵称");
+    if (TURNSTILE_ENABLED && !cfToken) return setError("请完成人机验证");
     setJoining(true);
     try {
-      await api.joinHumanSeat(gameId, token, name.trim());
+      await api.joinHumanSeat(gameId, token, name.trim(), TURNSTILE_ENABLED ? cfToken ?? undefined : undefined);
+      turnstileRef.current?.reset();
+      setCfToken(null);
       await refresh();
     } catch (e: any) {
       setError(e.message);
@@ -130,8 +137,13 @@ export default function PlayPage({ gameId, token }: { gameId: number; token: str
             onKeyDown={(e) => e.key === "Enter" && join()}
           />
           {error && <div className="err small" style={{ marginTop: 8 }}>{error}</div>}
+          {TURNSTILE_ENABLED && (
+            <div style={{ marginTop: 12 }}>
+              <Turnstile ref={turnstileRef} sitekey={TURNSTILE_SITEKEY} action="join_game" onVerify={setCfToken} />
+            </div>
+          )}
           <div className="actions" style={{ marginTop: 12 }}>
-            <button className="primary" onClick={join} disabled={joining}>{joining ? "加入中…" : "占座加入"}</button>
+            <button className="primary" onClick={join} disabled={joining || (TURNSTILE_ENABLED && !cfToken)}>{joining ? "加入中…" : "占座加入"}</button>
           </div>
         </div>
       </div>

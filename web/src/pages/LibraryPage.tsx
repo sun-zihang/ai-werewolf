@@ -7,6 +7,8 @@ import { AiProfilePublic, GameListItem, LEVEL_LABEL, LEVELS, ProviderMeta, Role,
 import Avatar from "../components/Avatar";
 import LevelTag from "../components/LevelTag";
 import Modal from "../components/Modal";
+import { Turnstile, TurnstileHandle } from "../components/Turnstile";
+import { TURNSTILE_SITEKEY, TURNSTILE_ENABLED } from "../config";
 
 interface FormState {
   name: string;
@@ -365,6 +367,8 @@ function ProfileFormModal({
   setBusy: (b: boolean) => void;
 }) {
   const isEdit = !!profile;
+  const [cfToken, setCfToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
   const [form, setForm] = useState<FormState>(() =>
     profile
       ? {
@@ -396,6 +400,7 @@ function ProfileFormModal({
   async function save() {
     if (!form.name.trim()) return onError("请填写名称");
     if (!form.model.trim()) return onError("请填写模型");
+    if (TURNSTILE_ENABLED && !isEdit && !cfToken) return onError("请完成人机验证");
     setBusy(true);
     try {
       const body: Record<string, unknown> = {
@@ -410,9 +415,12 @@ function ProfileFormModal({
         description: form.description.trim(),
       };
       if (form.api_key.trim()) body.api_key = form.api_key.trim();
+      if (TURNSTILE_ENABLED && !isEdit && cfToken) body.cf_turnstile_response = cfToken;
       if (isEdit) await api.updateProfile(profile.id, body);
       else await api.createProfile(body);
       onError("");
+      turnstileRef.current?.reset();
+      setCfToken(null);
       onSaved();
     } catch (e: any) {
       onError(e.message);
@@ -505,6 +513,12 @@ function ProfileFormModal({
         </label>
       </div>
       {provider?.note && <div className="small muted" style={{ marginTop: 4 }}>提示：{provider.note}</div>}
+      {!isEdit && TURNSTILE_ENABLED && (
+        <div style={{ marginTop: 4 }}>
+          <span style={{ display: "block", fontSize: 12, color: "var(--ink-soft)", marginBottom: 6 }}>人机验证</span>
+          <Turnstile ref={turnstileRef} sitekey={TURNSTILE_SITEKEY} action="create_profile" onVerify={setCfToken} />
+        </div>
+      )}
       <div className="actions">
         <button onClick={onClose}>取消</button>
         <button className="primary" onClick={save} disabled={busy}>{busy ? "保存中…" : "保存"}</button>

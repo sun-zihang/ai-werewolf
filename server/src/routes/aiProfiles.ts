@@ -5,6 +5,7 @@ import { LEVEL_META } from "../ai/adapters.js";
 import { encryptSecret, decryptSecret } from "../crypto.js";
 import { AiProfileInput, ThinkingLevel, THINKING_LEVELS } from "../types.js";
 import { profileToPublic } from "../manager.js";
+import { turnstileGuard } from "../turnstile.js";
 
 const MAX_PROFILES = 50;
 
@@ -24,7 +25,7 @@ export function aiProfileRouter(db: Db): Router {
     res.json(profileToPublic(row));
   });
 
-  r.post("/", (req, res) => {
+  r.post("/", turnstileGuard({ action: "create_profile" }), (req, res) => {
     try {
       const input = parseInput(req.body);
       const count = (db.prepare("SELECT COUNT(*) c FROM ai_profiles").get() as any).c;

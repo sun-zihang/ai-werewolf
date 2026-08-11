@@ -86,7 +86,13 @@ export const api = {
   getEvents: (id: number, after = 0) => request<GameEvent[]>(`/api/games/${id}/events-list?after=${after}`),
   // 真人模式
   getHumanView: (gameId: number, token: string) => request<HumanView>(`/api/games/${gameId}/seats/${token}/view`),
-  joinHumanSeat: (gameId: number, token: string, name: string) => request<{ ok: boolean }>(`/api/games/${gameId}/seats/${token}/join`, { method: "POST", body: JSON.stringify({ name }) }),
+  joinHumanSeat: (gameId: number, token: string, name: string, cfTurnstileResponse?: string) =>
+    request<{ ok: boolean }>(`/api/games/${gameId}/seats/${token}/join`, {
+      method: "POST",
+      body: JSON.stringify(
+        cfTurnstileResponse ? { name, cf_turnstile_response: cfTurnstileResponse } : { name }
+      ),
+    }),
   submitHumanAction: (gameId: number, token: string, body: Record<string, unknown>) => request<{ ok: boolean }>(`/api/games/${gameId}/seats/${token}/action`, { method: "POST", body: JSON.stringify(body) }),
   // 预设阵容
   listPresets: () => request<Preset[]>("/api/presets"),

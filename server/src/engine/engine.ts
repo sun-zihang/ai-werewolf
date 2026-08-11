@@ -720,9 +720,9 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function resolveMode(n: number, mode: "auto" | GameMode): GameMode {
-  if (mode !== "auto") return mode;
-  return modeForPlayerCount(n);
+export function resolveMode(n: number, mode: "auto" | GameMode | undefined | null): GameMode {
+  if (mode == null || mode === "auto") return modeForPlayerCount(n);
+  return mode;
 }
 
 export { ROLE_LABEL };
