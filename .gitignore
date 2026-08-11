@@ -4,5 +4,6 @@ data/
 *.log
 *.tsbuildinfo
 screenshots/
+tools/
 .env
 .DS_Store
