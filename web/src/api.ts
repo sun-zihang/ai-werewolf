@@ -39,6 +39,8 @@ export const api = {
   startGame: (id: number, speedMs = 450) => request<{ ok: boolean }>(`/api/games/${id}/start`, { method: "POST", body: JSON.stringify({ speed_ms: speedMs }) }),
   controlGame: (id: number, action: "pause" | "resume" | "abort") => request<{ ok: boolean }>(`/api/games/${id}/${action}`, { method: "POST" }),
   getReport: (id: number) => request<GameReport>(`/api/games/${id}/report`),
+  // 轮询增量事件（SSE 被隧道缓冲时仍保持时间线实时）
+  getEvents: (id: number, after = 0) => request<GameEvent[]>(`/api/games/${id}/events-list?after=${after}`),
   // 预设阵容
   listPresets: () => request<Preset[]>("/api/presets"),
   savePreset: (body: { name: string; ai_ids: number[]; config: Record<string, unknown> }) => request<{ id: number }>("/api/presets", { method: "POST", body: JSON.stringify(body) }),

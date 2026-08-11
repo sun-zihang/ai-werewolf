@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, subscribeEvents } from "../api";
 import { isOffline, useOffline } from "../offline";
 import OfflineCard from "../components/OfflineCard";
@@ -30,17 +30,34 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
   const [conn, setConn] = useState<"connecting" | "open" | "error">("connecting");
   const [copied, setCopied] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const lastSeqRef = useRef(0);
+  const reportDoneRef = useRef(false);
+
+  // 统一摄入事件：按 seq 去重，并维护已收到的最大 seq（供轮询增量拉取）
+  const ingest = useCallback((list: GameEvent[]) => {
+    if (!list.length) return;
+    setEvents((prev) => {
+      const start = prev.length ? prev[prev.length - 1].seq : 0;
+      const fresh = list.filter((e) => e.seq > start);
+      return fresh.length ? [...prev, ...fresh] : prev;
+    });
+    let max = lastSeqRef.current;
+    for (const e of list) if (e.seq > max) max = e.seq;
+    lastSeqRef.current = max;
+  }, []);
 
   useEffect(() => {
     setEvents([]);
     setReport(null);
     setError("");
     setConn("connecting");
+    lastSeqRef.current = 0;
+    reportDoneRef.current = false;
     api.getGame(gameId).then(setState).catch((e) => { if (!isOffline()) setError(e.message); });
     const off = subscribeEvents(
       gameId,
       (evt) => {
-        setEvents((prev) => (prev.length && prev[prev.length - 1].seq >= evt.seq ? prev : [...prev, evt]));
+        ingest([evt]);
         if (evt.type === "ai_thinking") {
           const pid = evt.playerId as number;
           const st = evt.status as string;
@@ -54,18 +71,22 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
       },
       setConn
     );
-    // 轮询状态（游戏结束后 SSE 仍开着，但状态需要刷新）
+    // 轮询状态 + 增量事件（SSE 被 Cloudflare Tunnel 等缓冲时，时间线仍实时跟进）
     const iv = setInterval(() => {
       api.getGame(gameId).then((s) => {
         setState(s);
-        if (s.status === "finished" && !report) api.getReport(gameId).then(setReport).catch(() => {});
+        if (s.status === "finished" && !reportDoneRef.current) {
+          reportDoneRef.current = true;
+          api.getReport(gameId).then(setReport).catch(() => {});
+        }
       }).catch(() => {});
+      api.getEvents(gameId, lastSeqRef.current).then((newer) => { if (newer.length) ingest(newer); }).catch(() => {});
     }, 2000);
     return () => {
       off();
       clearInterval(iv);
     };
-  }, [gameId]);
+  }, [gameId, ingest]);
 
   useEffect(() => {
     if (timelineRef.current) timelineRef.current.scrollTop = timelineRef.current.scrollHeight;

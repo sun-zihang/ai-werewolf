@@ -92,6 +92,19 @@ export function gamesRouter(db: Db): Router {
     }
   });
 
+  // 轮询用：返回 seq > after 的事件数组（短连接，Cloudflare Tunnel 等会缓冲 SSE 时仍可实时跟进）
+  r.get("/:id/events-list", (req, res) => {
+    const gameId = Number(req.params.id);
+    try {
+      getGameState(db, gameId);
+    } catch {
+      res.status(404).json({ error: "game not found" });
+      return;
+    }
+    const after = Number(req.query.after ?? 0);
+    res.json(getGameEvents(db, gameId, after));
+  });
+
   r.get("/:id/events", (req, res) => {
     const gameId = Number(req.params.id);
     try {
