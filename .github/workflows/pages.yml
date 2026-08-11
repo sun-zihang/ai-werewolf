@@ -29,7 +29,9 @@ jobs:
       - name: Build web
         run: npm run build --prefix web
         env:
-          VITE_API_BASE: ""
+          # 指向已部署的 Cloudflare 后端（Pages Functions + D1，固定公网地址）。
+          # GitHub Pages 仅托管前端，后端在另一域名，靠跨域（后端已开 CORS:*）调用。
+          VITE_API_BASE: "https://ai-werewolf.pages.dev"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
