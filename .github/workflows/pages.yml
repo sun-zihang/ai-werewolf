@@ -32,6 +32,8 @@ jobs:
           # 指向已部署的 Cloudflare 后端（Pages Functions + D1，固定公网地址）。
           # GitHub Pages 仅托管前端，后端在另一域名，靠跨域（后端已开 CORS:*）调用。
           VITE_API_BASE: "https://ai-werewolf.pages.dev"
+          # Cloudflare Turnstile 站点公钥（公开，构建期内联到前端，触发人机验证 widget）
+          VITE_TURNSTILE_SITEKEY: "0x4AAAAAAEM-s2j2__rn8DGF"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
