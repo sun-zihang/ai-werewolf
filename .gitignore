@@ -9,3 +9,5 @@ screenshots/
 tools/
 .env
 .DS_Store
+# WorkBuddy local workspace data (memory notes etc.)
+.workbuddy/

@@ -161,8 +161,18 @@ export const onRequest = async (ctx: PagesContext): Promise<Response> => {
     // ---------- presets ----------
     if (p[0] === "presets") {
       if (p.length === 1 && m === "GET") return json(await listPresets(env));
-      if (p.length === 1 && m === "POST") return json(await savePreset(env, await readBody(request)), 201);
-      if (p.length === 2 && m === "DELETE") return json(await deletePreset(env, Number(p[1])));
+      if (p.length === 1 && m === "POST") {
+        const body = await readBody(request);
+        const blocked = await guard(env, request, body, "save_preset");
+        if (blocked) return json(blocked, 403);
+        return json(await savePreset(env, body), 201);
+      }
+      if (p.length === 2 && m === "DELETE") {
+        const body = await readBody(request);
+        const blocked = await guard(env, request, body, "delete_preset");
+        if (blocked) return json(blocked, 403);
+        return json(await deletePreset(env, Number(p[1])));
+      }
       return fail("method not allowed", 405);
     }
 
@@ -177,18 +187,31 @@ export const onRequest = async (ctx: PagesContext): Promise<Response> => {
       }
       if (p.length === 2 && p[1] === "import" && m === "POST") {
         const body = await readBody(request);
+        const blocked = await guard(env, request, body, "import_profiles");
+        if (blocked) return json(blocked, 403);
         const profiles = Array.isArray(body.profiles) ? (body.profiles as Record<string, unknown>[]) : [];
         return json(await importProfiles(env, profiles), 201);
       }
       if (p.length === 3 && p[2] === "test" && m === "POST") {
         const body = await readBody(request);
+        const blocked = await guard(env, request, body, "test_profile");
+        if (blocked) return json(blocked, 403);
         return json(await testProfile(env, Number(p[1]), typeof body.api_key === "string" ? body.api_key : undefined));
       }
       if (p.length === 2) {
         const id = Number(p[1]);
         if (m === "GET") return json(await getProfile(env, id));
-        if (m === "PUT") return json(await updateProfile(env, id, await readBody(request)));
-        if (m === "DELETE") return json(await deleteProfile(env, id));
+        const body = await readBody(request);
+        if (m === "PUT") {
+          const blocked = await guard(env, request, body, "update_profile");
+          if (blocked) return json(blocked, 403);
+          return json(await updateProfile(env, id, body));
+        }
+        if (m === "DELETE") {
+          const blocked = await guard(env, request, body, "delete_profile");
+          if (blocked) return json(blocked, 403);
+          return json(await deleteProfile(env, id));
+        }
       }
       return fail("method not allowed", 405);
     }
@@ -198,6 +221,8 @@ export const onRequest = async (ctx: PagesContext): Promise<Response> => {
       if (p.length === 1 && m === "GET") return json(await listGames(env, Number(url.searchParams.get("profile_id") ?? 0)));
       if (p.length === 1 && m === "POST") {
         const body = await readBody(request);
+        const blocked = await guard(env, request, body, "create_game");
+        if (blocked) return json(blocked, 403);
         return json(await createGame(env, body as never), 201);
       }
 
@@ -211,6 +236,8 @@ export const onRequest = async (ctx: PagesContext): Promise<Response> => {
 
       if (p.length === 3 && m === "POST" && p[2] === "start") {
         const body = await readBody(request);
+        const blocked = await guard(env, request, body, "start_game");
+        if (blocked) return json(blocked, 403);
         const pace = typeof body.pace === "string" ? body.pace : "slow";
         await startGame(env, gameId, pace);
         ctx.waitUntil(tryStep(env, gameId)); // 立刻先推一步，减少首帧等待
@@ -218,6 +245,9 @@ export const onRequest = async (ctx: PagesContext): Promise<Response> => {
       }
 
       if (p.length === 3 && m === "POST" && (p[2] === "pause" || p[2] === "resume" || p[2] === "abort")) {
+        const body = await readBody(request);
+        const blocked = await guard(env, request, body, "control_game");
+        if (blocked) return json(blocked, 403);
         await controlGame(env, gameId, p[2]);
         return json({ ok: true });
       }

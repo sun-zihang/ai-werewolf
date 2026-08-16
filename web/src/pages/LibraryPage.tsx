@@ -8,6 +8,7 @@ import Avatar from "../components/Avatar";
 import LevelTag from "../components/LevelTag";
 import Modal from "../components/Modal";
 import { Turnstile, TurnstileHandle } from "../components/Turnstile";
+import { GuardedAction } from "../components/GuardedAction";
 import { TURNSTILE_SITEKEY, TURNSTILE_ENABLED } from "../config";
 
 interface FormState {
@@ -54,7 +55,7 @@ export default function LibraryPage({ go, onOpenSettings }: { go: (hash: string)
   const [backendMissing, setBackendMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-
+  const importTokenRef = useRef<string>("");
   const load = useCallback(async () => {
     try {
       setProfiles(await api.listProfiles());
@@ -82,10 +83,10 @@ export default function LibraryPage({ go, onOpenSettings }: { go: (hash: string)
     });
   }, [profiles, search, filterProvider, filterLevel]);
 
-  async function onDelete(p: AiProfilePublic) {
+  async function onDelete(p: AiProfilePublic, token: string) {
     if (!window.confirm(`确定删除 AI「${p.name}」？此操作不可恢复。`)) return;
     try {
-      await api.deleteProfile(p.id);
+      await api.deleteProfile(p.id, token);
       setTestResult((r) => ({ ...r, [p.id]: { ok: false, msg: "" } }));
       load();
     } catch (e: any) {
@@ -93,30 +94,33 @@ export default function LibraryPage({ go, onOpenSettings }: { go: (hash: string)
     }
   }
 
-  async function onCopy(p: AiProfilePublic) {
+  async function onCopy(p: AiProfilePublic, token: string) {
     try {
-      await api.createProfile({
-        name: `${p.name}（副本）`,
-        provider: p.provider,
-        model: p.model,
-        base_url_override: p.base_url_override,
-        thinking_level: p.thinking_level,
-        role_preference: p.role_preference,
-        language_style: p.language_style,
-        avatar_style: p.avatar_style,
-        description: p.description,
-      });
+      await api.createProfile(
+        {
+          name: `${p.name}（副本）`,
+          provider: p.provider,
+          model: p.model,
+          base_url_override: p.base_url_override,
+          thinking_level: p.thinking_level,
+          role_preference: p.role_preference,
+          language_style: p.language_style,
+          avatar_style: p.avatar_style,
+          description: p.description,
+        },
+        token
+      );
       load();
     } catch (e: any) {
       setError(e.message);
     }
   }
 
-  async function onTest(p: AiProfilePublic) {
+  async function onTest(p: AiProfilePublic, token: string) {
     setTesting(p.id);
     setTestResult((r) => ({ ...r, [p.id]: { ok: false, msg: "测试中…" } }));
     try {
-      const res = await api.testProfile(p.id);
+      const res = await api.testProfile(p.id, undefined, token);
       setTestResult((r) => ({
         ...r,
         [p.id]: { ok: res.ok, msg: res.ok ? `连通正常 · ${res.latencyMs}ms` : res.error ?? "失败" },
@@ -157,7 +161,7 @@ export default function LibraryPage({ go, onOpenSettings }: { go: (hash: string)
           }
         }
         if (!profiles.length) throw new Error("没有可导入的档案");
-        const res = await api.importProfiles(profiles);
+        const res = await api.importProfiles(profiles, importTokenRef.current);
         setError("");
         load();
         window.alert(`成功导入 ${res.created.length} 个 AI 档案`);
@@ -213,7 +217,9 @@ export default function LibraryPage({ go, onOpenSettings }: { go: (hash: string)
           </select>
           <button onClick={exportJson}>导出 JSON</button>
           <button onClick={exportCsv}>导出 CSV</button>
-          <button onClick={() => fileRef.current?.click()}>导入</button>
+          <GuardedAction action="import_profiles" onConfirm={(t) => { importTokenRef.current = t; fileRef.current?.click(); }}>
+            导入
+          </GuardedAction>
           <button className="primary" onClick={() => setCreating(true)}>新建 AI</button>
           <input
             ref={fileRef} type="file" accept=".json,.csv" style={{ display: "none" }}
@@ -269,9 +275,9 @@ export default function LibraryPage({ go, onOpenSettings }: { go: (hash: string)
                 <div className="ops">
                   <button onClick={() => openDetail(p)}>详情</button>
                   <button onClick={() => setEditing(p)}>编辑</button>
-                  <button onClick={() => onCopy(p)}>复制</button>
-                  <button onClick={() => onTest(p)} disabled={testing === p.id}>测连</button>
-                  <button className="danger" onClick={() => onDelete(p)}>删除</button>
+                  <GuardedAction action="create_profile" onConfirm={(t) => onCopy(p, t)}>复制</GuardedAction>
+                  <GuardedAction action="test_profile" onConfirm={(t) => onTest(p, t)} disabled={testing === p.id}>测连</GuardedAction>
+                  <GuardedAction action="delete_profile" className="danger" onConfirm={(t) => onDelete(p, t)}>删除</GuardedAction>
                 </div>
               </div>
             );
@@ -400,7 +406,7 @@ function ProfileFormModal({
   async function save() {
     if (!form.name.trim()) return onError("请填写名称");
     if (!form.model.trim()) return onError("请填写模型");
-    if (TURNSTILE_ENABLED && !isEdit && !cfToken) return onError("请完成人机验证");
+    if (TURNSTILE_ENABLED && !cfToken) return onError("请完成人机验证");
     setBusy(true);
     try {
       const body: Record<string, unknown> = {
@@ -415,9 +421,9 @@ function ProfileFormModal({
         description: form.description.trim(),
       };
       if (form.api_key.trim()) body.api_key = form.api_key.trim();
-      if (TURNSTILE_ENABLED && !isEdit && cfToken) body.cf_turnstile_response = cfToken;
-      if (isEdit) await api.updateProfile(profile.id, body);
-      else await api.createProfile(body);
+      if (TURNSTILE_ENABLED && cfToken) body.cf_turnstile_response = cfToken;
+      if (isEdit) await api.updateProfile(profile.id, body, cfToken ?? undefined);
+      else await api.createProfile(body, cfToken ?? undefined);
       onError("");
       turnstileRef.current?.reset();
       setCfToken(null);
@@ -513,10 +519,10 @@ function ProfileFormModal({
         </label>
       </div>
       {provider?.note && <div className="small muted" style={{ marginTop: 4 }}>提示：{provider.note}</div>}
-      {!isEdit && TURNSTILE_ENABLED && (
+      {TURNSTILE_ENABLED && (
         <div style={{ marginTop: 4 }}>
           <span style={{ display: "block", fontSize: 12, color: "var(--ink-soft)", marginBottom: 6 }}>人机验证</span>
-          <Turnstile ref={turnstileRef} sitekey={TURNSTILE_SITEKEY} action="create_profile" onVerify={setCfToken} />
+          <Turnstile ref={turnstileRef} sitekey={TURNSTILE_SITEKEY} action={isEdit ? "update_profile" : "create_profile"} onVerify={setCfToken} />
         </div>
       )}
       <div className="actions">

@@ -96,19 +96,50 @@ export const api = {
   providers: () => request<ProviderMeta[]>("/api/providers"),
   // AI 档案
   listProfiles: () => request<AiProfilePublic[]>("/api/ai-profiles"),
-  createProfile: (body: Record<string, unknown>) => request<AiProfilePublic>("/api/ai-profiles", { method: "POST", body: JSON.stringify(body) }),
-  updateProfile: (id: number, body: Record<string, unknown>) => request<AiProfilePublic>(`/api/ai-profiles/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  deleteProfile: (id: number) => request<{ ok: boolean }>(`/api/ai-profiles/${id}`, { method: "DELETE" }),
-  importProfiles: (profiles: Record<string, unknown>[]) => request<{ created: number[] }>("/api/ai-profiles/import", { method: "POST", body: JSON.stringify({ profiles }) }),
-  testProfile: (id: number, apiKey?: string) =>
-    request<{ ok: boolean; latencyMs?: number; error?: string }>(`/api/ai-profiles/${id}/test`, { method: "POST", body: JSON.stringify({ api_key: apiKey ?? "" }) }),
+  createProfile: (body: Record<string, unknown>, cfTurnstileResponse?: string) =>
+    request<AiProfilePublic>("/api/ai-profiles", {
+      method: "POST",
+      body: JSON.stringify(cfTurnstileResponse ? { ...body, cf_turnstile_response: cfTurnstileResponse } : body),
+    }),
+  updateProfile: (id: number, body: Record<string, unknown>, cfTurnstileResponse?: string) =>
+    request<AiProfilePublic>(`/api/ai-profiles/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(cfTurnstileResponse ? { ...body, cf_turnstile_response: cfTurnstileResponse } : body),
+    }),
+  deleteProfile: (id: number, cfTurnstileResponse?: string) =>
+    request<{ ok: boolean }>(`/api/ai-profiles/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify(cfTurnstileResponse ? { cf_turnstile_response: cfTurnstileResponse } : {}),
+    }),
+  importProfiles: (profiles: Record<string, unknown>[], cfTurnstileResponse?: string) =>
+    request<{ created: number[] }>("/api/ai-profiles/import", {
+      method: "POST",
+      body: JSON.stringify(cfTurnstileResponse ? { profiles, cf_turnstile_response: cfTurnstileResponse } : { profiles }),
+    }),
+  testProfile: (id: number, apiKey?: string, cfTurnstileResponse?: string) =>
+    request<{ ok: boolean; latencyMs?: number; error?: string }>(`/api/ai-profiles/${id}/test`, {
+      method: "POST",
+      body: JSON.stringify(cfTurnstileResponse ? { api_key: apiKey ?? "", cf_turnstile_response: cfTurnstileResponse } : { api_key: apiKey ?? "" }),
+    }),
   // 对局
   listGames: () => request<GameListItem[]>("/api/games"),
   listGamesByProfile: (profileId: number) => request<GameListItem[]>(`/api/games?profile_id=${profileId}`),
-  createGame: (body: Record<string, unknown>) => request<CreateGameResult>("/api/games", { method: "POST", body: JSON.stringify(body) }),
+  createGame: (body: Record<string, unknown>, cfTurnstileResponse?: string) =>
+    request<CreateGameResult>("/api/games", {
+      method: "POST",
+      body: JSON.stringify(cfTurnstileResponse ? { ...body, cf_turnstile_response: cfTurnstileResponse } : body),
+    }),
   getGame: (id: number) => request<GameState>(`/api/games/${id}`),
-  startGame: (id: number, pace: "slow" | "normal" | "fast" = "slow") => request<{ ok: boolean }>(`/api/games/${id}/start`, { method: "POST", body: JSON.stringify({ pace }) }),
-  controlGame: (id: number, action: "pause" | "resume" | "abort") => request<{ ok: boolean }>(`/api/games/${id}/${action}`, { method: "POST" }),
+  startGame: (id: number, pace: "slow" | "normal" | "fast" = "slow", cfTurnstileResponse?: string) =>
+    request<{ ok: boolean }>(`/api/games/${id}/start`, {
+      method: "POST",
+      body: JSON.stringify(cfTurnstileResponse ? { pace, cf_turnstile_response: cfTurnstileResponse } : { pace }),
+    }),
+  controlGame: (id: number, action: "pause" | "resume" | "abort", cfTurnstileResponse?: string) =>
+    request<{ ok: boolean }>(`/api/games/${id}/${action}`, {
+      method: "POST",
+      body: JSON.stringify(cfTurnstileResponse ? { cf_turnstile_response: cfTurnstileResponse } : {}),
+    }),
   getReport: (id: number) => request<GameReport>(`/api/games/${id}/report`),
   // 轮询增量事件（SSE 被隧道缓冲时仍保持时间线实时）
   getEvents: (id: number, after = 0) => request<GameEvent[]>(`/api/games/${id}/events-list?after=${after}`),
@@ -124,8 +155,16 @@ export const api = {
   submitHumanAction: (gameId: number, token: string, body: Record<string, unknown>) => request<{ ok: boolean }>(`/api/games/${gameId}/seats/${token}/action`, { method: "POST", body: JSON.stringify(body) }),
   // 预设阵容
   listPresets: () => request<Preset[]>("/api/presets"),
-  savePreset: (body: { name: string; ai_ids: number[]; config: Record<string, unknown> }) => request<{ id: number }>("/api/presets", { method: "POST", body: JSON.stringify(body) }),
-  deletePreset: (id: number) => request<{ ok: boolean }>(`/api/presets/${id}`, { method: "DELETE" }),
+  savePreset: (body: { name: string; ai_ids: number[]; config: Record<string, unknown> }, cfTurnstileResponse?: string) =>
+    request<{ id: number }>("/api/presets", {
+      method: "POST",
+      body: JSON.stringify(cfTurnstileResponse ? { ...body, cf_turnstile_response: cfTurnstileResponse } : body),
+    }),
+  deletePreset: (id: number, cfTurnstileResponse?: string) =>
+    request<{ ok: boolean }>(`/api/presets/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify(cfTurnstileResponse ? { cf_turnstile_response: cfTurnstileResponse } : {}),
+    }),
 };
 
 /** SSE 订阅对局事件；返回取消函数。onStatus 回报连接状态，便于观战者确认是否实时跟进 */

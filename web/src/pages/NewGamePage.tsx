@@ -5,6 +5,7 @@ import OfflineCard from "../components/OfflineCard";
 import { AiProfilePublic, CreateGameResult, GameMode, LEVEL_LABEL, Preset, RoleAssignment } from "../types";
 import Avatar from "../components/Avatar";
 import LevelTag from "../components/LevelTag";
+import { GuardedAction } from "../components/GuardedAction";
 
 const MODE_OPTIONS: { id: "auto" | GameMode; label: string; hint: string; range: [number, number] | null }[] = [
   { id: "auto", label: "自动匹配", hint: "2-4 简易 / 5-8 标准 / 9-12 复杂", range: null },
@@ -66,38 +67,36 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
     return Object.fromEntries([...selected].map((id) => [String(id), override]));
   }
 
-  async function start() {
+  async function start(token: string) {
     if (total < 2) return setError("请至少选择 2 名玩家（AI + 真人）");
     if (modeError) return setError(`该模式需要 ${modeOpt.range![0]}-${modeOpt.range![1]} 人，当前 ${total} 人`);
     setBusy(true);
     setError("");
     try {
-      const res = await api.createGame({
-        ai_ids: [...selected],
-        human_count: humanCount,
-        mode,
-        assignment,
-        overrides: overrides(),
-      });
-      if (humanCount > 0) {
-        // 含真人：先发邀请链接，等真人加入后再开始
-        setCreated(res);
-        setBusy(false);
-      } else {
-        await api.startGame(res.id, pace);
-        go(`#/games/${res.id}`);
-      }
+      const res = await api.createGame(
+        {
+          ai_ids: [...selected],
+          human_count: humanCount,
+          mode,
+          assignment,
+          overrides: overrides(),
+        },
+        token
+      );
+      // 统一走「创建 → 开始」两步：无论含不含真人，都先落库拿到对局号，再由下一步开局
+      setCreated(res);
+      setBusy(false);
     } catch (e: any) {
       setError(e.message);
       setBusy(false);
     }
   }
 
-  async function beginGame() {
+  async function beginGame(token: string) {
     if (!created) return;
     setBusy(true);
     try {
-      await api.startGame(created.id, pace);
+      await api.startGame(created.id, pace, token);
       go(`#/games/${created.id}`);
     } catch (e: any) {
       setError(e.message);
@@ -105,11 +104,11 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
     }
   }
 
-  async function savePreset() {
+  async function savePreset(token: string) {
     if (!presetName.trim()) return setError("请填写阵容名称");
     if (n < 2) return setError("请先选择 AI");
     try {
-      await api.savePreset({ name: presetName.trim(), ai_ids: [...selected], config: { mode, assignment, override } });
+      await api.savePreset({ name: presetName.trim(), ai_ids: [...selected], config: { mode, assignment, override } }, token);
       setPresetName("");
       setError("");
       api.listPresets().then(setPresets).catch(() => {});
@@ -136,25 +135,31 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
           </div>
         </div>
         <div className="card room-card">
-          <div className="section-title">真人加入链接</div>
-          <div className="invite-list">
-            {created.humanInvites?.map((inv) => {
-              const link = `${location.origin}/#/play/${created.id}/${inv.token}`;
-              return (
-                <div className="invite-row" key={inv.seat}>
-                  <span className="invite-seat">座位 {inv.seat}</span>
-                  <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
-                  <button className="ghost" onClick={() => navigator.clipboard?.writeText(link)}>复制</button>
-                </div>
-              );
-            })}
-          </div>
-          <div className="small muted" style={{ margin: "8px 0" }}>
-            真人在各自设备打开链接、输入昵称占座；座位占满后即可开始。开局后真人角色随机，上桌才知道自己是狼还是好人。
-          </div>
+          {humanCount > 0 && (
+            <>
+              <div className="section-title">真人加入链接</div>
+              <div className="invite-list">
+                {created.humanInvites?.map((inv) => {
+                  const link = `${location.origin}/#/play/${created.id}/${inv.token}`;
+                  return (
+                    <div className="invite-row" key={inv.seat}>
+                      <span className="invite-seat">座位 {inv.seat}</span>
+                      <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
+                      <button className="ghost" onClick={() => navigator.clipboard?.writeText(link)}>复制</button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="small muted" style={{ margin: "8px 0" }}>
+                真人在各自设备打开链接、输入昵称占座；座位占满后即可开始。开局后真人角色随机，上桌才知道自己是狼还是好人。
+              </div>
+            </>
+          )}
           {error && <div className="err small">{error}</div>}
           <div className="actions" style={{ marginTop: 8 }}>
-            <button className="primary" onClick={beginGame} disabled={busy}>开始对局</button>
+            <GuardedAction className="primary" action="start_game" onConfirm={(t) => beginGame(t)} disabled={busy}>
+              开始对局
+            </GuardedAction>
             <button className="ghost" onClick={() => setCreated(null)} disabled={busy}>返回修改</button>
           </div>
         </div>
@@ -244,9 +249,9 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
             {modeError && <div className="err small">该模式需要 {modeOpt.range![0]}-{modeOpt.range![1]} 人，当前 {n} 人</div>}
             {error && <div className="err small">{error}</div>}
             <div className="actions" style={{ marginTop: 8 }}>
-              <button className="primary" onClick={start} disabled={busy || n < 2 || !!modeError}>
+              <GuardedAction className="primary" action="create_game" onConfirm={(t) => start(t)} disabled={busy || n < 2 || !!modeError}>
                 {busy ? "创建中…" : "开始对局"}
-              </button>
+              </GuardedAction>
             </div>
           </div>
 
@@ -259,13 +264,13 @@ export default function NewGamePage({ go }: { go: (hash: string) => void }) {
                   <button className="ghost" style={{ flex: 1, textAlign: "left" }} onClick={() => usePreset(p)}>
                     {p.name} <span className="faint small">（{p.ai_ids.length} 人）</span>
                   </button>
-                  <button className="ghost danger" onClick={() => api.deletePreset(p.id).then(() => api.listPresets().then(setPresets))}>删</button>
+                  <GuardedAction className="ghost danger" action="delete_preset" onConfirm={(t) => api.deletePreset(p.id, t).then(() => api.listPresets().then(setPresets))}>删</GuardedAction>
                 </div>
               ))}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <input type="text" placeholder="阵容名称" value={presetName} onChange={(e) => setPresetName(e.target.value)} />
-              <button onClick={savePreset}>保存当前</button>
+              <GuardedAction action="save_preset" onConfirm={(t) => savePreset(t)}>保存当前</GuardedAction>
             </div>
           </div>
         </div>

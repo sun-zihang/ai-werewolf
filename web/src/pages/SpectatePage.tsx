@@ -5,6 +5,7 @@ import OfflineCard from "../components/OfflineCard";
 import { GameEvent, GameReport, GameState, ROLE_LABEL, STATUS_LABEL, TEAM_LABEL } from "../types";
 import Avatar from "../components/Avatar";
 import LevelTag from "../components/LevelTag";
+import { GuardedAction } from "../components/GuardedAction";
 
 const PHASE_LABEL: Record<string, string> = {
   pending: "等待开始",
@@ -105,10 +106,10 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
     return m;
   }, [state]);
 
-  async function control(action: "pause" | "resume" | "abort") {
+  async function control(action: "pause" | "resume" | "abort", token: string) {
     if (action === "abort" && !window.confirm("确定中止本局？")) return;
     try {
-      await api.controlGame(gameId, action);
+      await api.controlGame(gameId, action, token);
       const s = await api.getGame(gameId);
       setState(s);
     } catch (e: any) {
@@ -162,10 +163,10 @@ export default function SpectatePage({ gameId }: { gameId: number }) {
         </button>
         {running && (
           <>
-            <button onClick={() => control(state.status === "paused" ? "resume" : "pause")}>
+            <GuardedAction action="control_game" onConfirm={(t) => control(state.status === "paused" ? "resume" : "pause", t)}>
               {state.status === "paused" ? "继续" : "暂停"}
-            </button>
-            <button className="danger" onClick={() => control("abort")}>中止</button>
+            </GuardedAction>
+            <GuardedAction className="danger" action="control_game" onConfirm={(t) => control("abort", t)}>中止</GuardedAction>
           </>
         )}
         <a href="#/history"><button className="ghost">返回历史</button></a>
